@@ -7,6 +7,9 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <!-- <style>
+        -webkit-tap-highlight-color: transparent;
+    </style> -->
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div id="app" class="max-w-md mx-auto p-4">
@@ -18,60 +21,66 @@
         <div class="flex gap-2 mb-6">
             <input v-model="searchCode" @keyup.enter="fetchData" placeholder="基金代码 (如 001592)" 
                    class="flex-1 p-3 rounded-xl border-none shadow focus:ring-2 focus:ring-blue-400 outline-none">
-            <button @click="fetchData" class="bg-blue-600 text-white px-5 py-3 rounded-xl shadow hover:bg-blue-700">查询</button>
+            <button @click="fetchData" class="bg-blue-600 text-white px-5 py-3 rounded-xl shadow hover:bg-blue-700 active:scale-95 transition-transform">查询</button>
         </div>
 
-        <div v-if="fund" class="bg-white rounded-2xl shadow-lg p-5 mb-6">
+        <div v-if="fund" class="bg-white rounded-2xl shadow-lg p-5 mb-6 border border-white">
             <div class="flex justify-between items-start mb-4">
-                <div>
-                    <h2 class="text-lg font-bold">{{ fund.name }}</h2>
-                    <p class="text-gray-400 text-xs">{{ fund.fundcode }}</p>
+                <div class="pr-2">
+                    <h2 class="text-lg font-bold text-gray-800 leading-tight">{{ fund.name }}</h2>
+                    <p class="text-gray-400 text-xs mt-1">{{ fund.fundcode }}</p>
                 </div>
-                <button @click="toggleFav" class="text-sm px-3 py-1 rounded-full border border-blue-500 text-blue-500">
+                <button @click="toggleFav" class="shrink-0 text-sm px-3 py-1 rounded-full border border-blue-500 text-blue-500 active:bg-blue-50">
                     {{ isFav ? '⭐ 已在自选' : '➕ 加入自选' }}
                 </button>
             </div>
             <div class="flex justify-between items-end mb-4">
                 <div>
-                    <p class="text-xs text-gray-400">当前估值 ({{ fund.gztime }})</p>
+                    <p class="text-[10px] text-gray-400">当前估值 ({{ fund.gztime }})</p>
                     <p :class="fund.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="text-3xl font-black">
                         {{ fund.gsz }} <span class="text-sm font-normal">{{ fund.gszzl >= 0 ? '+' : '' }}{{ fund.gszzl }}%</span>
                     </p>
                 </div>
                 <div class="text-right">
-                    <p class="text-xs text-gray-400">昨日净值</p>
+                    <p class="text-[10px] text-gray-400">昨日净值</p>
                     <p class="text-gray-600 font-medium">{{ fund.dwjz }}</p>
                 </div>
             </div>
 
-            <div id="chart" class="w-full h-40 bg-gray-50 rounded-xl mt-2"></div>
+            <div id="chart" class="w-full h-44 bg-gray-50 rounded-xl mt-2 overflow-hidden"></div>
         </div>
 
         <div class="mt-8">
-            <h3 class="font-bold text-gray-700 mb-3 ml-2 italic">我的自选</h3>
+            <h3 class="font-bold text-gray-700 mb-3 ml-2 italic text-sm">我的自选</h3>
             <div v-for="item in favorites" :key="item.code" 
                  @click="searchCode = item.code; fetchData()"
-                 class="bg-white p-4 rounded-xl shadow-sm mb-3 flex justify-between items-center border-l-4 border-blue-500 cursor-pointer">
-                <div>
-                    <p class="font-bold text-gray-800 text-sm">{{ item.name }}</p>
-                    <p class="text-xs text-gray-400">{{ item.code }}</p>
+                 class="bg-white p-4 rounded-xl shadow-sm mb-3 flex justify-between items-center border-l-4 border-blue-500 cursor-pointer active:bg-gray-50 transition-colors">
+                <div class="flex-1 min-w-0 pr-4">
+                    <p class="font-bold text-gray-800 text-sm truncate">{{ item.name }}</p>
+                    <p class="text-[10px] text-gray-400">{{ item.code }}</p>
                 </div>
                 <div class="flex items-center gap-4">
                     <div class="text-right">
                         <p :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="font-bold text-sm">
                             {{ item.gsz || '--' }}
                         </p>
-                        <p :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="text-xs">
+                        <p :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="text-[10px]">
                             {{ item.gszzl ? (item.gszzl >= 0 ? '+' : '') + item.gszzl + '%' : '--' }}
                         </p>
                     </div>
-                    <button @click.stop="removeFav(item.code)" class="text-gray-300 hover:text-red-400">✕</button>
+                    <button @click.stop="removeFav(item.code)" class="text-gray-300 hover:text-red-400 p-2">✕</button>
                 </div>
+            </div>
+            <div v-if="favorites.length === 0" class="text-center py-10 text-gray-400 text-xs">
+                暂无自选，搜索后点击“加入自选”
             </div>
         </div>
     </div>
 
     <script>
+        // 定义全局回调，处理天天基金 jsonpgz 格式
+        window.jsonpgz = (data) => { window.__currentFundData = data; };
+
         const { createApp, ref, onMounted, computed, nextTick } = Vue;
 
         createApp({
@@ -83,83 +92,118 @@
 
                 const isFav = computed(() => fund.value && favorites.value.some(f => f.code === fund.value.fundcode));
 
-                // 修正：定义全局 jsonpgz 以匹配天天基金接口返回
-                window.jsonpgz = (data) => {
-                    window.__currentFundData = data;
-                };
-
-                const initChart = (xData, yData) => {
-                    nextTick(() => {
-                        const chartDom = document.getElementById('chart');
-                        if (!chartDom || !myChart) return;
-                        myChart.setOption({
-                            xAxis: { data: xData },
-                            series: [{ data: yData }]
-                        });
-                    });
-                };
-
-                // 创建 ECharts 实例
-                const createChartInstance = () => {
-                    nextTick(() => {
-                        const chartDom = document.getElementById('chart');
-                        if (!chartDom) return;
-                        myChart = echarts.init(chartDom);
-                        myChart.setOption({
-                            grid: { left: '12%', right: '5%', top: '10%', bottom: '15%' },
-                            xAxis: { type: 'category', axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
-                            yAxis: { type: 'value', scale: true, splitLine: { lineStyle: { type: 'dashed' } } },
-                            series: [{
-                                type: 'line', smooth: true, showSymbol: false,
-                                lineStyle: { color: '#3b82f6', width: 2 },
-                                areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(59,130,246,0.3)'}, {offset: 1, color: 'rgba(59,130,246,0)'}]) }
-                            }]
-                        });
-                    });
+                // 统一初始化/获取图表实例函数
+                const getChart = () => {
+                    const dom = document.getElementById('chart');
+                    if (!dom) return null;
+                    if (!myChart) myChart = echarts.init(dom);
+                    return myChart;
                 };
 
                 const fetchData = async () => {
                     if (!searchCode.value) return;
                     
-                    // 1. 获取基础估值 (JSONP)
+                    // 1. 立即清空旧数据，并让图表进入加载状态
+                    const chart = getChart();
+                    if (chart) {
+                        chart.clear();
+                        chart.showLoading({ text: '加载中...', color: '#3b82f6', textColor: '#3b82f6', maskColor: 'rgba(255,255,255,0.8)' });
+                    }
+
+                    // 2. 获取基础估值数据 (JSONP)
                     const script = document.createElement('script');
                     script.src = `https://fundgz.1234567.com.cn/js/${searchCode.value}.js?rt=${Date.now()}`;
+                    script.onerror = () => {
+                        alert("基金代码无效或网络请求失败");
+                        if (chart) chart.hideLoading();
+                    };
                     document.body.appendChild(script);
 
-                    script.onload = async () => {
+                    script.onload = () => {
                         fund.value = window.__currentFundData;
                         script.remove();
-                        createChartInstance(); // 确保容器加载后再初始化
 
-                        // 2. 获取分时走势图 (使用独立的回调名避免冲突)
-                        const trendCallback = `trend_${Date.now()}`;
-                        window[trendCallback] = (res) => {
-                            if (res && res.Data) {
-                                const points = res.Data;
-                                initChart(points.map(p => p.time), points.map(p => parseFloat(p.data)));
-                            }
-                            delete window[trendCallback];
-                        };
-                        const trendScript = document.createElement('script');
-                        trendScript.src = `https://fundmobapi.1234567.com.cn/FundMApi/FundVariatChart.ashx?FCODE=${searchCode.value}&deviceid=123&plat=Wap&product=EFund&version=2.0&callback=${trendCallback}`;
-                        document.body.appendChild(trendScript);
-                        trendScript.onload = () => trendScript.remove();
+                        // 3. 基础信息加载完后，请求分时走势图
+                        nextTick(() => {
+                            fetchTrendData(searchCode.value);
+                        });
                         
-                        updateList();
+                        updateAllFavorites();
                     };
                 };
 
-                const updateList = async () => {
+                const fetchTrendData = (code) => {
+                    const chart = getChart();
+                    const callbackName = `trend_${Date.now()}`;
+                    
+                    window[callbackName] = (res) => {
+                        if (chart) chart.hideLoading();
+                        
+                        if (res && res.Data && res.Data.length > 0) {
+                            const xData = res.Data.map(p => p.time);
+                            const yData = res.Data.map(p => parseFloat(p.data));
+                            
+                            chart.setOption({
+                                grid: { left: '12%', right: '5%', top: '10%', bottom: '15%' },
+                                tooltip: { trigger: 'axis', show: true },
+                                xAxis: { 
+                                    type: 'category', 
+                                    data: xData, 
+                                    axisLabel: { show: false }, 
+                                    axisLine: { show: false }, 
+                                    axisTick: { show: false } 
+                                },
+                                yAxis: { 
+                                    type: 'value', 
+                                    scale: true, 
+                                    splitLine: { lineStyle: { type: 'dashed', color: '#eee' } },
+                                    axisLabel: { fontSize: 10, color: '#999' }
+                                },
+                                series: [{
+                                    data: yData,
+                                    type: 'line',
+                                    smooth: true,
+                                    showSymbol: false,
+                                    lineStyle: { color: '#3b82f6', width: 2 },
+                                    areaStyle: {
+                                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                            { offset: 0, color: 'rgba(59,130,246,0.3)' },
+                                            { offset: 1, color: 'rgba(59,130,246,0)' }
+                                        ])
+                                    }
+                                }]
+                            });
+                        } else {
+                            // 接口无数据（周末、深夜或新基金）
+                            if (chart) {
+                                chart.showLoading({ 
+                                    text: '今日暂无分时数据\n(周末或非交易时段)', 
+                                    showSpinner: false,
+                                    textColor: '#9ca3af',
+                                    maskColor: 'rgba(255, 255, 255, 0.9)'
+                                });
+                            }
+                        }
+                        delete window[callbackName];
+                    };
+
+                    const tScript = document.createElement('script');
+                    tScript.src = `https://fundmobapi.1234567.com.cn/FundMApi/FundVariatChart.ashx?FCODE=${code}&deviceid=123&plat=Wap&product=EFund&version=2.0&callback=${callbackName}`;
+                    document.body.appendChild(tScript);
+                    tScript.onload = () => tScript.remove();
+                };
+
+                const updateAllFavorites = async () => {
                     for (let item of favorites.value) {
-                        const script = document.createElement('script');
-                        script.src = `https://fundgz.1234567.com.cn/js/${item.code}.js?rt=${Date.now()}`;
-                        document.body.appendChild(script);
-                        script.onload = () => {
-                            const data = window.__currentFundData;
-                            item.gsz = data.gsz;
-                            item.gszzl = data.gszzl;
-                            script.remove();
-                            localStorage.setItem('my_lite_funds', JSON.stringify(favorites.value));
+                        const s = document.createElement('script');
+                        s.src = `https://fundgz.1234567.com.cn/js/${item.code}.js?rt=${Date.now()}`;
+                        document.body.appendChild(s);
+                        s.onload = () => {
+                            const d = window.__currentFundData;
+                            item.gsz = d.gsz;
+                            item.gszzl = d.gszzl;
+                            s.remove();
+                            save();
                         };
                     }
                 };
@@ -167,21 +211,32 @@
                 const toggleFav = () => {
                     if (!fund.value) return;
                     const idx = favorites.value.findIndex(f => f.code === fund.value.fundcode);
-                    if (idx > -1) favorites.value.splice(idx, 1);
-                    else favorites.value.push({ name: fund.value.name, code: fund.value.fundcode, gsz: fund.value.gsz, gszzl: fund.value.gszzl });
-                    localStorage.setItem('my_lite_funds', JSON.stringify(favorites.value));
+                    if (idx > -1) {
+                        favorites.value.splice(idx, 1);
+                    } else {
+                        favorites.value.push({
+                            name: fund.value.name,
+                            code: fund.value.fundcode,
+                            gsz: fund.value.gsz,
+                            gszzl: fund.value.gszzl
+                        });
+                    }
+                    save();
                 };
 
+                const save = () => localStorage.setItem('my_lite_funds', JSON.stringify(favorites.value));
+
                 onMounted(() => {
-                    updateList();
-                    setInterval(updateList, 60000);
+                    updateAllFavorites();
+                    // 每分钟自动刷新一次自选列表
+                    setInterval(updateAllFavorites, 60000);
                 });
 
                 return { 
                     searchCode, fund, favorites, isFav, fetchData, toggleFav,
                     removeFav: (code) => {
                         favorites.value = favorites.value.filter(f => f.code !== code);
-                        localStorage.setItem('my_lite_funds', JSON.stringify(favorites.value));
+                        save();
                     }
                 };
             }
