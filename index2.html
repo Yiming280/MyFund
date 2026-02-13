@@ -55,14 +55,26 @@
         </div>
 
         <div class="mt-8">
-            <h3 class="text-lg font-bold text-gray-700 mb-4 px-2 italic">我的自选 (LocalStorage)</h3>
-            <div v-for="item in favorites" :key="item.code" class="bg-white p-4 rounded-xl shadow-sm mb-3 flex justify-between items-center border-l-4 border-blue-500">
-                <div @click="searchCode = item.code; fetchData()" class="cursor-pointer">
+            <h3 class="text-lg font-bold text-gray-700 mb-4 px-2 italic">我的自选</h3>
+            <div v-for="item in favorites" :key="item.code" 
+                class="bg-white p-4 rounded-xl shadow-sm mb-3 flex justify-between items-center border-l-4 border-blue-500 hover:shadow-md transition cursor-pointer"
+                @click="searchCode = item.code; fetchData()">
+                
+                <div>
                     <p class="font-bold text-gray-800">{{ item.name }}</p>
                     <p class="text-xs text-gray-400">{{ item.code }}</p>
                 </div>
+
                 <div class="flex items-center gap-4">
-                    <button @click="removeFav(item.code)" class="text-gray-300 hover:text-red-500">✕</button>
+                    <div class="text-right">
+                        <p class="text-sm font-bold" :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'">
+                            {{ item.gsz || '--' }}
+                        </p>
+                        <p class="text-xs" :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'">
+                            {{ item.gszzl ? (item.gszzl >= 0 ? '+' : '') + item.gszzl + '%' : '--' }}
+                        </p>
+                    </div>
+                    <button @click.stop="removeFav(item.code)" class="text-gray-300 hover:text-red-500 p-2">✕</button>
                 </div>
             </div>
         </div>
@@ -75,18 +87,22 @@
             setup() {
                 const searchCode = ref('');
                 const fund = ref(null);
-                const favorites = ref(JSON.parse(localStorage.getItem('my_funds') || '[]'));
                 const showType = ref('realtime');
+                // 初始化自选列表
+                const favorites = ref(JSON.parse(localStorage.getItem('my_funds') || '[]'));
                 let chart = null;
 
-                // 【修复 isFav 报错】定义判断是否已收藏的逻辑
-                const isFav = computed(() => fund.value && favorites.value.some(f => f.code === fund.value.fundcode));
+                // 【1. isFav 逻辑】判断当前查询的基金是否已在自选里
+                const isFav = computed(() => {
+                    return fund.value && favorites.value.some(f => f.code === fund.value.fundcode);
+                });
 
+                // 【2. 渲染图表函数】
                 const renderChart = (xData, yData) => {
                     const chartDom = document.getElementById('chart');
-                    if (!chartDom) return; // 【修复 getAttribute 报错】如果找不到容器就先不画
-                    
+                    if (!chartDom) return;
                     if (!chart) chart = echarts.init(chartDom);
+                    
                     chart.setOption({
                         tooltip: { trigger: 'axis' },
                         xAxis: { type: 'category', data: xData },
@@ -96,50 +112,80 @@
                             type: 'line',
                             smooth: true,
                             areaStyle: { color: 'rgba(59, 130, 246, 0.1)' },
-                            lineStyle: { color: '#3b82f6' }
+                            lineStyle: { color: '#3b82f6', width: 2 }
                         }]
                     }, true);
                 };
 
+                // 【3. 更新自选列表所有数据的实时数值】
+                const updateFavoritesData = async () => {
+                    for (let item of favorites.value) {
+                        try {
+                            const res = await fetch(`http://127.0.0.1:5000/get_fund_realtime?code=${item.code}`);
+                            const data = await res.json();
+                            item.gsz = data.gsz;
+                            item.gszzl = data.gszzl;
+                        } catch (e) {
+                            console.error("更新自选失败", item.code);
+                        }
+                    }
+                };
+
+                // 【4. 查询按钮的核心逻辑】
                 const fetchData = async () => {
                     if (!searchCode.value) return;
                     try {
-                        // 第一步：无论什么模式，先获取基金的名称和实时基础信息
+                        // 先拿基础信息
                         const resBase = await fetch(`http://127.0.0.1:5000/get_fund_realtime?code=${searchCode.value}`);
                         const baseData = await resBase.json();
-                        
-                        // 这一行非常关键！它负责更新网页上显示的名称、基金代码、实时估值等
                         fund.value = baseData; 
 
-                        // 第二步：根据当前选中的模式，画对应的图表
+                        // 再根据模式画图
                         if (showType.value === 'realtime') {
-                            // 实时模式：用刚刚拿到的基础信息画图
                             renderChart(["昨日净值", "今日估值"], [parseFloat(baseData.dwjz), parseFloat(baseData.gsz)]);
                         } else {
-                            // 历史模式：再去请求一次 Python 的历史接口
                             const resHist = await fetch(`http://127.0.0.1:5000/get_fund_history?code=${searchCode.value}`);
                             const histData = await resHist.json();
                             renderChart(histData.dates, histData.values);
                         }
+                        updateFavoritesData(); // 顺便刷新列表
                     } catch (e) {
-                        console.error("具体错误:", e);
-                        alert("获取失败，请确保 Python 后端 (server.py) 正在运行");
+                        alert("获取失败，请确认 Python 后端已启动");
                     }
                 };
 
+                // 【5. 收藏/取消收藏逻辑】
                 const toggleFav = () => {
                     if (!fund.value) return;
-                    if (isFav.value) {
-                        favorites.value = favorites.value.filter(f => f.code !== fund.value.fundcode);
+                    const index = favorites.value.findIndex(f => f.code === fund.value.fundcode);
+                    if (index > -1) {
+                        favorites.value.splice(index, 1);
                     } else {
-                        favorites.value.push({ name: fund.value.name, code: fund.value.fundcode });
+                        favorites.value.push({ 
+                            name: fund.value.name, 
+                            code: fund.value.fundcode,
+                            gsz: fund.value.gsz,
+                            gszzl: fund.value.gszzl
+                        });
                     }
                     localStorage.setItem('my_funds', JSON.stringify(favorites.value));
                 };
 
+                const removeFav = (code) => {
+                    favorites.value = favorites.value.filter(f => f.code !== code);
+                    localStorage.setItem('my_funds', JSON.stringify(favorites.value));
+                };
+
+                // 【6. 页面挂载后的初始化】
+                onMounted(() => {
+                    updateFavoritesData();
+                    setInterval(updateFavoritesData, 60000); // 每分钟刷一次
+                });
+
+                // 【非常重要：必须把所有网页上用到的变量/函数都暴露出来】
                 return { 
                     searchCode, fund, fetchData, favorites, 
-                    showType, isFav, toggleFav 
+                    showType, isFav, toggleFav, removeFav 
                 };
             }
         }).mount('#app');
