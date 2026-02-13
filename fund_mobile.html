@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FundLite</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="app" class="max-w-md mx-auto p-4">
+        <header class="py-6 text-center">
+            <h1 class="text-2xl font-bold text-blue-600">FundLite</h1>
+            <p class="text-xs text-gray-400">无需后端 · 直接查询</p>
+        </header>
+
+        <div class="flex gap-2 mb-6">
+            <input v-model="searchCode" @keyup.enter="fetchData" placeholder="基金代码 (如 001592)" 
+                   class="flex-1 p-3 rounded-xl border-none shadow focus:ring-2 focus:ring-blue-400 outline-none">
+            <button @click="fetchData" class="bg-blue-600 text-white px-5 py-3 rounded-xl shadow hover:bg-blue-700">查询</button>
+        </div>
+
+        <div v-if="fund" class="bg-white rounded-2xl shadow-lg p-5 mb-6">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h2 class="text-lg font-bold">{{ fund.name }}</h2>
+                    <p class="text-gray-400 text-xs">{{ fund.fundcode }}</p>
+                </div>
+                <button @click="toggleFav" class="text-sm px-3 py-1 rounded-full border border-blue-500 text-blue-500">
+                    {{ isFav ? '⭐ 已在自选' : '➕ 加入自选' }}
+                </button>
+            </div>
+            <div class="flex justify-between items-end mb-4">
+                <div>
+                    <p class="text-xs text-gray-400">当前估值 ({{ fund.gztime }})</p>
+                    <p :class="fund.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="text-3xl font-black">
+                        {{ fund.gsz }} <span class="text-sm font-normal">{{ fund.gszzl >= 0 ? '+' : '' }}{{ fund.gszzl }}%</span>
+                    </p>
+                </div>
+                <div class="text-right">
+                    <p class="text-xs text-gray-400">昨日净值</p>
+                    <p class="text-gray-600 font-medium">{{ fund.dwjz }}</p>
+                </div>
+            </div>
+
+            <div id="chart" class="w-full h-40 bg-gray-50 rounded-xl mt-2"></div>
+        </div>
+
+        <div class="mt-8">
+            <h3 class="font-bold text-gray-700 mb-3 ml-2 italic">我的自选</h3>
+            <div v-for="item in favorites" :key="item.code" 
+                 @click="searchCode = item.code; fetchData()"
+                 class="bg-white p-4 rounded-xl shadow-sm mb-3 flex justify-between items-center border-l-4 border-blue-500 cursor-pointer">
+                <div>
+                    <p class="font-bold text-gray-800 text-sm">{{ item.name }}</p>
+                    <p class="text-xs text-gray-400">{{ item.code }}</p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="text-right">
+                        <p :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="font-bold text-sm">
+                            {{ item.gsz || '--' }}
+                        </p>
+                        <p :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="text-xs">
+                            {{ item.gszzl ? (item.gszzl >= 0 ? '+' : '') + item.gszzl + '%' : '--' }}
+                        </p>
+                    </div>
+                    <button @click.stop="removeFav(item.code)" class="text-gray-300 hover:text-red-400">✕</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted, computed, nextTick } = Vue;
+
+        createApp({
+            setup() {
+                const searchCode = ref('');
+                const fund = ref(null);
+                const favorites = ref(JSON.parse(localStorage.getItem('my_lite_funds') || '[]'));
+                let myChart = null;
+
+                const isFav = computed(() => fund.value && favorites.value.some(f => f.code === fund.value.fundcode));
+
+                // 修正：定义全局 jsonpgz 以匹配天天基金接口返回
+                window.jsonpgz = (data) => {
+                    window.__currentFundData = data;
+                };
+
+                const initChart = (xData, yData) => {
+                    nextTick(() => {
+                        const chartDom = document.getElementById('chart');
+                        if (!chartDom || !myChart) return;
+                        myChart.setOption({
+                            xAxis: { data: xData },
+                            series: [{ data: yData }]
+                        });
+                    });
+                };
+
+                // 创建 ECharts 实例
+                const createChartInstance = () => {
+                    nextTick(() => {
+                        const chartDom = document.getElementById('chart');
+                        if (!chartDom) return;
+                        myChart = echarts.init(chartDom);
+                        myChart.setOption({
+                            grid: { left: '12%', right: '5%', top: '10%', bottom: '15%' },
+                            xAxis: { type: 'category', axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
+                            yAxis: { type: 'value', scale: true, splitLine: { lineStyle: { type: 'dashed' } } },
+                            series: [{
+                                type: 'line', smooth: true, showSymbol: false,
+                                lineStyle: { color: '#3b82f6', width: 2 },
+                                areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(59,130,246,0.3)'}, {offset: 1, color: 'rgba(59,130,246,0)'}]) }
+                            }]
+                        });
+                    });
+                };
+
+                const fetchData = async () => {
+                    if (!searchCode.value) return;
+                    
+                    // 1. 获取基础估值 (JSONP)
+                    const script = document.createElement('script');
+                    script.src = `https://fundgz.1234567.com.cn/js/${searchCode.value}.js?rt=${Date.now()}`;
+                    document.body.appendChild(script);
+
+                    script.onload = async () => {
+                        fund.value = window.__currentFundData;
+                        script.remove();
+                        createChartInstance(); // 确保容器加载后再初始化
+
+                        // 2. 获取分时走势图 (使用独立的回调名避免冲突)
+                        const trendCallback = `trend_${Date.now()}`;
+                        window[trendCallback] = (res) => {
+                            if (res && res.Data) {
+                                const points = res.Data;
+                                initChart(points.map(p => p.time), points.map(p => parseFloat(p.data)));
+                            }
+                            delete window[trendCallback];
+                        };
+                        const trendScript = document.createElement('script');
+                        trendScript.src = `https://fundmobapi.1234567.com.cn/FundMApi/FundVariatChart.ashx?FCODE=${searchCode.value}&deviceid=123&plat=Wap&product=EFund&version=2.0&callback=${trendCallback}`;
+                        document.body.appendChild(trendScript);
+                        trendScript.onload = () => trendScript.remove();
+                        
+                        updateList();
+                    };
+                };
+
+                const updateList = async () => {
+                    for (let item of favorites.value) {
+                        const script = document.createElement('script');
+                        script.src = `https://fundgz.1234567.com.cn/js/${item.code}.js?rt=${Date.now()}`;
+                        document.body.appendChild(script);
+                        script.onload = () => {
+                            const data = window.__currentFundData;
+                            item.gsz = data.gsz;
+                            item.gszzl = data.gszzl;
+                            script.remove();
+                            localStorage.setItem('my_lite_funds', JSON.stringify(favorites.value));
+                        };
+                    }
+                };
+
+                const toggleFav = () => {
+                    if (!fund.value) return;
+                    const idx = favorites.value.findIndex(f => f.code === fund.value.fundcode);
+                    if (idx > -1) favorites.value.splice(idx, 1);
+                    else favorites.value.push({ name: fund.value.name, code: fund.value.fundcode, gsz: fund.value.gsz, gszzl: fund.value.gszzl });
+                    localStorage.setItem('my_lite_funds', JSON.stringify(favorites.value));
+                };
+
+                onMounted(() => {
+                    updateList();
+                    setInterval(updateList, 60000);
+                });
+
+                return { 
+                    searchCode, fund, favorites, isFav, fetchData, toggleFav,
+                    removeFav: (code) => {
+                        favorites.value = favorites.value.filter(f => f.code !== code);
+                        localStorage.setItem('my_lite_funds', JSON.stringify(favorites.value));
+                    }
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
