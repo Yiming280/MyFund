@@ -3,108 +3,152 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>基金实时估值助手</title>
+    <title>基金估值纯净版</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-50">
+<body class="bg-gray-100 min-h-screen">
     <div id="app" class="max-w-md mx-auto p-4">
-        <h1 class="text-2xl font-bold text-blue-600 mb-6 text-center">FundWatch 估值助手</h1>
+        <header class="py-6 text-center">
+            <h1 class="text-2xl font-bold text-blue-600">FundLite</h1>
+            <p class="text-xs text-gray-400">无需后端 · 直接查询</p>
+        </header>
 
-        <div class="flex gap-2 mb-8">
-            <input v-model="searchCode" placeholder="输入基金代码 (如: 000001)" 
-                   class="flex-1 border p-2 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-            <button @click="getFundData(searchCode)" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition">
-                查询
-            </button>
+        <div class="flex gap-2 mb-6">
+            <input v-model="searchCode" @keyup.enter="fetchData" placeholder="基金代码 (如 001592)" 
+                   class="flex-1 p-3 rounded-xl border-none shadow focus:ring-2 focus:ring-blue-400 outline-none">
+            <button @click="fetchData" class="bg-blue-600 text-white px-5 py-3 rounded-xl shadow hover:bg-blue-700">查询</button>
         </div>
 
-        <div v-if="currentFund" class="bg-white p-4 rounded-lg shadow-md mb-8 border-l-4 border-blue-500">
-            <div class="flex justify-between items-start">
+        <div v-if="fund" class="bg-white rounded-2xl shadow-lg p-5 mb-6">
+            <div class="flex justify-between items-start mb-4">
                 <div>
-                    <h2 class="font-bold text-lg">{{ currentFund.name }}</h2>
-                    <p class="text-gray-500 text-sm">{{ currentFund.fundcode }}</p>
+                    <h2 class="text-lg font-bold">{{ fund.name }}</h2>
+                    <p class="text-gray-400 text-xs">{{ fund.fundcode }}</p>
                 </div>
-                <button @click="addToFavorites(currentFund)" class="text-blue-500 text-sm border border-blue-500 px-2 py-1 rounded">
-                    + 加入自选
+                <button @click="toggleFav" class="text-sm px-3 py-1 rounded-full border border-blue-500 text-blue-500">
+                    {{ isFav ? '⭐ 已在自选' : '➕ 加入自选' }}
                 </button>
             </div>
-            <div class="mt-4 flex justify-between">
+            <div class="flex justify-between items-end">
                 <div>
-                    <p class="text-gray-400 text-xs">实时估值</p>
-                    <p :class="currentFund.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="text-xl font-bold">
-                        {{ currentFund.gsz }} ({{ currentFund.gszzl }}%)
+                    <p class="text-xs text-gray-400">当前估值 ({{ fund.gztime }})</p>
+                    <p :class="fund.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="text-3xl font-black">
+                        {{ fund.gsz }} <span class="text-sm font-normal">{{ fund.gszzl >= 0 ? '+' : '' }}{{ fund.gszzl }}%</span>
                     </p>
                 </div>
                 <div class="text-right">
-                    <p class="text-gray-400 text-xs">更新时间</p>
-                    <p class="text-gray-600 text-sm">{{ currentFund.gztime }}</p>
+                    <p class="text-xs text-gray-400">昨日净值</p>
+                    <p class="text-gray-600 font-medium">{{ fund.dwjz }}</p>
                 </div>
             </div>
         </div>
 
-        <div>
-            <h3 class="font-bold text-gray-700 mb-3 italic">我的自选</h3>
-            <div v-if="favorites.length === 0" class="text-gray-400 text-center py-10">暂无自选基金</div>
-            <div v-for="item in favorites" :key="item.fundcode" class="bg-white p-3 rounded mb-2 shadow-sm flex justify-between items-center">
+        <div class="mt-8">
+            <h3 class="font-bold text-gray-700 mb-3 ml-2 italic">我的自选</h3>
+            <div v-for="item in favorites" :key="item.code" 
+                 @click="searchCode = item.code; fetchData()"
+                 class="bg-white p-4 rounded-xl shadow-sm mb-3 flex justify-between items-center border-l-4 border-blue-500 cursor-pointer">
                 <div>
-                    <p class="font-medium text-gray-800">{{ item.name }}</p>
-                    <p class="text-xs text-gray-400">{{ item.fundcode }}</p>
+                    <p class="font-bold text-gray-800 text-sm">{{ item.name }}</p>
+                    <p class="text-xs text-gray-400">{{ item.code }}</p>
                 </div>
-                <div class="text-right">
-                    <p :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="font-bold">
-                        {{ item.gszzl }}%
-                    </p>
-                    <button @click="removeFavorite(item.fundcode)" class="text-gray-300 hover:text-red-400 text-xs">删除</button>
+                <div class="flex items-center gap-4">
+                    <div class="text-right">
+                        <p :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="font-bold text-sm">
+                            {{ item.gsz || '--' }}
+                        </p>
+                        <p :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="text-xs">
+                            {{ item.gszzl ? (item.gszzl >= 0 ? '+' : '') + item.gszzl + '%' : '--' }}
+                        </p>
+                    </div>
+                    <button @click.stop="removeFav(item.code)" class="text-gray-300 hover:text-red-400">✕</button>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        const { createApp, ref, onMounted } = Vue;
+        const { createApp, ref, onMounted, computed } = Vue;
 
         createApp({
             setup() {
                 const searchCode = ref('');
-                const currentFund = ref(null);
-                const favorites = ref([]);
+                const fund = ref(null);
+                const favorites = ref(JSON.parse(localStorage.getItem('my_lite_funds') || '[]'));
 
-                // 核心：获取数据 (注意：实际开发中需通过后端代理解决跨域)
-                const getFundData = async (code) => {
-                    if (!code) return;
+                const isFav = computed(() => fund.value && favorites.value.some(f => f.code === fund.value.fundcode));
+
+                // 核心：JSONP 跨域获取函数
+                const jsonpRequest = (code) => {
+                    return new Promise((resolve, reject) => {
+                        // 1. 定义临时全局回调函数
+                        const callbackName = `jsonpgz_${Date.now()}`;
+                        window.jsonpgz = (data) => {
+                            resolve(data);
+                            delete window.jsonpgz; // 用完即删
+                            document.getElementById(callbackName).remove(); 
+                        };
+
+                        // 2. 动态创建 script 标签请求数据
+                        const script = document.createElement('script');
+                        script.id = callbackName;
+                        script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
+                        script.onerror = () => reject('接口请求失败');
+                        document.body.appendChild(script);
+                    });
+                };
+
+                const fetchData = async () => {
+                    if (!searchCode.value) return;
                     try {
-                        // 使用 jsonp 或 后端代理。这里为了演示使用了一个公共的代理接口或直接请求
-                        // 注意：天天基金接口在浏览器直接 fetch 会报 CORS 错误
-                        const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent('http://fundgz.1234567.com.cn/js/'+code+'.js?rt='+Date.now())}`);
-                        const data = await response.json();
-                        const jsonStr = data.contents.match(/\((.*)\)/)[1];
-                        currentFund.value = JSON.parse(jsonStr);
+                        const data = await jsonpRequest(searchCode.value);
+                        fund.value = data;
+                        updateAllFavs(); // 查询时顺便刷新自选
                     } catch (e) {
-                        alert("获取数据失败，请检查代码是否正确或存在跨域限制");
+                        alert("代码有误或基金暂无估值");
                     }
                 };
 
-                const addToFavorites = (fund) => {
-                    if (!favorites.value.find(f => f.fundcode === fund.fundcode)) {
-                        favorites.value.push(fund);
-                        save();
+                const updateAllFavs = async () => {
+                    for (let item of favorites.value) {
+                        try {
+                            const data = await jsonpRequest(item.code);
+                            item.gsz = data.gsz;
+                            item.gszzl = data.gszzl;
+                        } catch (e) {}
                     }
                 };
 
-                const removeFavorite = (code) => {
-                    favorites.value = favorites.value.filter(f => f.fundcode !== code);
+                const toggleFav = () => {
+                    if (!fund.value) return;
+                    if (isFav.value) {
+                        favorites.value = favorites.value.filter(f => f.code !== fund.value.fundcode);
+                    } else {
+                        favorites.value.push({ 
+                            name: fund.value.name, 
+                            code: fund.value.fundcode,
+                            gsz: fund.value.gsz,
+                            gszzl: fund.value.gszzl
+                        });
+                    }
                     save();
                 };
 
-                const save = () => localStorage.setItem('my_funds', JSON.stringify(favorites.value));
-                
+                const save = () => localStorage.setItem('my_lite_funds', JSON.stringify(favorites.value));
+
                 onMounted(() => {
-                    const saved = localStorage.getItem('my_funds');
-                    if (saved) favorites.value = JSON.parse(saved);
+                    updateAllFavs();
+                    setInterval(updateAllFavs, 60000);
                 });
 
-                return { searchCode, currentFund, favorites, getFundData, addToFavorites, removeFavorite };
+                return { 
+                    searchCode, fund, favorites, isFav, 
+                    fetchData, toggleFav, removeFav: (code) => {
+                        favorites.value = favorites.value.filter(f => f.code !== code);
+                        save();
+                    }
+                };
             }
         }).mount('#app');
     </script>
