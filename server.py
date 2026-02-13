@@ -16,8 +16,14 @@ def get_realtime():
     code = request.args.get('code')
     url = f"http://fundgz.1234567.com.cn/js/{code}.js"
     res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-    json_str = re.findall(r'\((.*)\)', res.text)[0]
-    return json_str
+    
+    # 这一步是为了把 jsonpgz({...}) 变成 {...}
+    # 如果接口返回内容为空（比如代码填错了），这里可能会报错
+    try:
+        json_str = re.findall(r'\((.*)\)', res.text)[0]
+        return json_str
+    except:
+        return jsonify({"name": "未知基金", "fundcode": code, "gsz": "0", "gszzl": "0", "dwjz": "0", "gztime": "无数据"})
 
 # 接口2：获取30天历史净值
 @app.route('/get_fund_history')

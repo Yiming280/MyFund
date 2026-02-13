@@ -75,60 +75,18 @@
             setup() {
                 const searchCode = ref('');
                 const fund = ref(null);
-                const showType = ref('realtime');
                 const favorites = ref(JSON.parse(localStorage.getItem('my_funds') || '[]'));
+                const showType = ref('realtime');
                 let chart = null;
 
+                // 【修复 isFav 报错】定义判断是否已收藏的逻辑
                 const isFav = computed(() => fund.value && favorites.value.some(f => f.code === fund.value.fundcode));
 
-                // 初始化图表
-                const initChart = () => {
-                    const chartDom = document.getElementById('chart');
-                    if (!chartDom) return;
-                    chart = echarts.init(chartDom);
-                    const option = {
-                        grid: { top: 20, right: 20, bottom: 40, left: 50 },
-                        xAxis: { type: 'category', data: ['09:30', '10:30', '11:30', '13:00', '14:00', '15:00'], axisLine: {show: false} },
-                        yAxis: { type: 'value', scale: true, splitLine: {lineStyle: {type: 'dashed'}} },
-                        series: [{
-                            data: [1.1, 1.12, 1.11, 1.15, 1.14, 1.16], // 演示模拟数据
-                            type: 'line',
-                            smooth: true,
-                            showSymbol: false,
-                            areaStyle: { color: 'rgba(59, 130, 246, 0.1)' },
-                            lineStyle: { color: '#3b82f6', width: 3 }
-                        }]
-                    };
-                    chart.setOption(option);
-                };
-
-                const fetchData = async () => {
-                    if (!searchCode.value) return;
-                    try {
-                        if (showType.value === 'realtime') {
-                            // 实时估值逻辑
-                            const resReal = await fetch(`http://127.0.0.1:5000/get_fund_realtime?code=${searchCode.value}`);
-                            fund.value = await resReal.json();
-                            renderChart(["昨日净值", "今日估值"], [fund.value.dwjz, fund.value.gsz]);
-                        } else {
-                            // 30天历史逻辑
-                            const resHist = await fetch(`http://127.0.0.1:5000/get_fund_history?code=${searchCode.value}`);
-                            const histData = await resHist.json();
-                            // 这里的 histData.dates 和 histData.values 是 Python 发过来的
-                            renderChart(histData.dates, histData.values);
-                        }
-                    } catch (e) {
-                        console.error("报错详情:", e);
-                        alert("获取失败，请确认 Python 窗口是否显示了错误信息");
-                    }
-                };
-
-                // 还要补充一个 renderChart 函数
                 const renderChart = (xData, yData) => {
-                    if (!chart) {
-                        const chartDom = document.getElementById('chart');
-                        chart = echarts.init(chartDom);
-                    }
+                    const chartDom = document.getElementById('chart');
+                    if (!chartDom) return; // 【修复 getAttribute 报错】如果找不到容器就先不画
+                    
+                    if (!chart) chart = echarts.init(chartDom);
                     chart.setOption({
                         tooltip: { trigger: 'axis' },
                         xAxis: { type: 'category', data: xData },
@@ -143,21 +101,45 @@
                     }, true);
                 };
 
-                const toggleFav = () => {
-                    if (isFav.value) return;
-                    favorites.value.push({ name: fund.value.name, code: fund.value.fundcode });
-                    localStorage.setItem('my_funds', JSON.stringify(favorites.value));
+                const fetchData = async () => {
+                    if (!searchCode.value) return;
+                    try {
+                        // 第一步：无论什么模式，先获取基金的名称和实时基础信息
+                        const resBase = await fetch(`http://127.0.0.1:5000/get_fund_realtime?code=${searchCode.value}`);
+                        const baseData = await resBase.json();
+                        
+                        // 这一行非常关键！它负责更新网页上显示的名称、基金代码、实时估值等
+                        fund.value = baseData; 
+
+                        // 第二步：根据当前选中的模式，画对应的图表
+                        if (showType.value === 'realtime') {
+                            // 实时模式：用刚刚拿到的基础信息画图
+                            renderChart(["昨日净值", "今日估值"], [parseFloat(baseData.dwjz), parseFloat(baseData.gsz)]);
+                        } else {
+                            // 历史模式：再去请求一次 Python 的历史接口
+                            const resHist = await fetch(`http://127.0.0.1:5000/get_fund_history?code=${searchCode.value}`);
+                            const histData = await resHist.json();
+                            renderChart(histData.dates, histData.values);
+                        }
+                    } catch (e) {
+                        console.error("具体错误:", e);
+                        alert("获取失败，请确保 Python 后端 (server.py) 正在运行");
+                    }
                 };
 
-                const removeFav = (code) => {
-                    favorites.value = favorites.value.filter(f => f.code !== code);
+                const toggleFav = () => {
+                    if (!fund.value) return;
+                    if (isFav.value) {
+                        favorites.value = favorites.value.filter(f => f.code !== fund.value.fundcode);
+                    } else {
+                        favorites.value.push({ name: fund.value.name, code: fund.value.fundcode });
+                    }
                     localStorage.setItem('my_funds', JSON.stringify(favorites.value));
                 };
 
                 return { 
                     searchCode, fund, fetchData, favorites, 
-                    showType,  // 别忘了这行！
-                    toggleFav, removeFav 
+                    showType, isFav, toggleFav 
                 };
             }
         }).mount('#app');
