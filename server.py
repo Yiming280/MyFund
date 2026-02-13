@@ -1,35 +1,40 @@
 from flask import Flask, request, jsonify
 import requests
 import re
+import pandas as pd
 
 app = Flask(__name__)
 
-# 解决跨域问题：允许网页访问这个 Python 程序
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
-@app.route('/get_fund')
-def get_fund():
-    # 获取网页传来的基金代码
+# 接口1：获取当日实时估值
+@app.route('/get_fund_realtime')
+def get_realtime():
     code = request.args.get('code')
-    if not code:
-        return "Missing code", 400
-
-    # 模拟浏览器去访问天天基金接口
     url = f"http://fundgz.1234567.com.cn/js/{code}.js"
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    
-    try:
-        response = requests.get(url, headers=headers)
-        # 解析数据：天天基金返回的是 jsonpgz({...}) 格式，我们需要花括号里的内容
-        content = response.text
-        json_str = re.findall(r'\((.*)\)', content)[0]
-        return json_str
-    except Exception as e:
-        return str(e), 500
+    res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+    json_str = re.findall(r'\((.*)\)', res.text)[0]
+    return json_str
+
+# 接口2：获取30天历史净值
+@app.route('/get_fund_history')
+def get_history():
+    code = request.args.get('code')
+    # 天天基金历史净值接口
+    url = f"http://fund.eastmoney.com/f10/F10DataApi.aspx?type=lsjz&code={code}&per=30&page=1"
+    res = requests.get(url)
+    # 使用 pandas 抓取网页中的表格
+    tables = pd.read_html(res.text)
+    df = tables[0] # 获取第一个表格
+    # 提取日期和单位净值，并转为倒序（从旧到新）
+    data = {
+        "dates": df['净值日期'].tolist()[::-1],
+        "values": df['单位净值'].tolist()[::-1]
+    }
+    return jsonify(data)
 
 if __name__ == '__main__':
-    print("Python 助手已启动！正在监听端口 5000...")
     app.run(port=5000)
