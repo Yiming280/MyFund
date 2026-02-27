@@ -3,75 +3,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FundLite</title>
+    <title>FundLite Pro</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        .profit-up { color: #ef4444; }
+        .profit-down { color: #22c55e; }
+        .sell-signal { animation: pulse 2s infinite; border: 2px solid #ef4444; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+    </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div id="app" class="max-w-md mx-auto p-4">
         <header class="py-6 text-center">
             <h1 class="text-2xl font-bold text-blue-600">FundLite</h1>
-            <p class="text-xs text-gray-400">无需后端 · 自动打点 · 隔天重置</p>
+            <p class="text-xs text-gray-400">查询实时估值 · 记录当日波动 · 卖出和加仓建议</p>
+            <button @click="batchImport" class="text-[10px] text-blue-500 underline mt-1">批量同步持仓</button>
         </header>
 
         <div class="flex gap-2 mb-6">
             <input v-model="searchCode" @keyup.enter="fetchData" placeholder="基金代码 (如 001592)" 
-                    class="flex-1 p-3 rounded-xl border-none shadow focus:ring-2 focus:ring-blue-400 outline-none">
+                    class="flex-1 p-3 rounded-xl border-none shadow focus:ring-2 focus:ring-blue-400 outline-none text-sm">
             <button @click="fetchData" class="bg-blue-600 text-white px-5 py-3 rounded-xl shadow hover:bg-blue-700 active:scale-95 transition-transform">查询</button>
         </div>
 
-        <div v-if="fund" class="bg-white rounded-2xl shadow-lg p-5 mb-6 border border-white">
+        <div v-if="fund" class="bg-white rounded-2xl shadow-lg p-5 mb-6 border border-white relative overflow-hidden">
             <div class="flex justify-between items-start mb-4">
                 <div class="pr-2">
                     <h2 class="text-lg font-bold text-gray-800 leading-tight">{{ fund.name }}</h2>
-                    <p class="text-gray-400 text-xs mt-1">{{ fund.fundcode }}</p>
+                    <p class="text-gray-400 text-[10px] mt-1">{{ fund.fundcode }} | {{ fund.gztime }}</p>
                 </div>
-                <button @click="toggleFav" class="shrink-0 text-sm px-3 py-1 rounded-full border border-blue-500 text-blue-500 active:bg-blue-50">
+                <button @click="toggleFav" class="shrink-0 text-xs px-3 py-1 rounded-full border border-blue-500 text-blue-500 active:bg-blue-50">
                     {{ isFav ? '⭐ 已在自选' : '➕ 加入自选' }}
                 </button>
             </div>
-            <div class="flex justify-between items-end mb-4">
-                <div>
-                    <p class="text-[10px] text-gray-400">当前估值 ({{ fund.gztime }})</p>
-                    <p :class="fund.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="text-3xl font-black">
-                        {{ fund.gsz }} <span class="text-sm font-normal">{{ fund.gszzl >= 0 ? '+' : '' }}{{ fund.gszzl }}%</span>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div class="bg-gray-50 p-3 rounded-xl">
+                    <p class="text-[10px] text-gray-400 mb-1">今日估值涨跌</p>
+                    <p :class="fund.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="text-2xl font-black">
+                        {{ fund.gszzl >= 0 ? '+' : '' }}{{ fund.gszzl }}%
                     </p>
                 </div>
-                <div class="text-right">
-                    <p class="text-[10px] text-gray-400">昨日净值</p>
-                    <p class="text-gray-600 font-medium">{{ fund.dwjz }}</p>
+                <div v-if="getFundCost(fund.fundcode)" class="bg-blue-50 p-3 rounded-xl border border-blue-100">
+                    <p class="text-[10px] text-blue-400 mb-1">持仓盈亏 (对比成本)</p>
+                    <p :class="calcProfit(fund.gsz, fund.fundcode) >= 0 ? 'text-red-500' : 'text-green-500'" class="text-2xl font-black">
+                        {{ calcProfit(fund.gsz, fund.fundcode) >= 0 ? '+' : '' }}{{ calcProfit(fund.gsz, fund.fundcode) }}%
+                    </p>
                 </div>
             </div>
 
-            <div id="chart" class="w-full h-44 bg-gray-50 rounded-xl mt-2 overflow-hidden"></div>
-            <p class="text-[9px] text-gray-300 mt-2 text-center italic">数据每分钟自动记录，隔日自动清空曲线</p>
+            <div id="chart" class="w-full h-40 bg-gray-50 rounded-xl overflow-hidden"></div>
+            
+            <div v-if="getFundCost(fund.fundcode)" :class="getStrategy(calcProfit(fund.gsz, fund.fundcode)).bg" class="mt-4 p-3 rounded-xl border flex items-center gap-3">
+                <span class="text-xl">{{ getStrategy(calcProfit(fund.gsz, fund.fundcode)).icon }}</span>
+                <div>
+                    <p :class="getStrategy(calcProfit(fund.gsz, fund.fundcode)).text" class="text-xs font-bold">{{ getStrategy(calcProfit(fund.gsz, fund.fundcode)).title }}</p>
+                    <p class="text-[10px] text-gray-500">{{ getStrategy(calcProfit(fund.gsz, fund.fundcode)).desc }}</p>
+                </div>
+            </div>
         </div>
 
         <div class="mt-8">
-            <h3 class="font-bold text-gray-700 mb-3 ml-2 italic text-sm">我的自选</h3>
+            <h3 class="font-bold text-gray-700 mb-3 ml-2 italic text-sm">我的持仓/自选</h3>
             <div v-for="item in favorites" :key="item.code" 
                  @click="searchCode = item.code; fetchData()"
-                 class="bg-white p-4 rounded-xl shadow-sm mb-3 flex justify-between items-center border-l-4 border-blue-500 cursor-pointer active:bg-gray-50 transition-colors">
-                <div class="flex-1 min-w-0 pr-4">
+                 class="bg-white p-4 rounded-xl shadow-sm mb-3 flex justify-between items-center border-l-4 border-blue-500 cursor-pointer active:bg-gray-50">
+                <div class="flex-1 min-w-0 pr-2">
                     <p class="font-bold text-gray-800 text-sm truncate">{{ item.name }}</p>
-                    <p class="text-[10px] text-gray-400">{{ item.code }}</p>
+                    <p class="text-[10px] text-gray-400">成本: 
+                        <span @click.stop="setCost(item)" class="underline decoration-dotted text-blue-500">{{ item.cost || '未设置' }}</span>
+                    </p>
                 </div>
-                <div class="flex items-center gap-4">
+                <div class="flex items-center gap-3">
                     <div class="text-right">
                         <p :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="font-bold text-sm">
                             {{ item.gsz || '--' }}
                         </p>
-                        <p :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="text-[10px]">
-                            {{ item.gszzl ? (item.gszzl >= 0 ? '+' : '') + item.gszzl + '%' : '--' }}
+                        <p v-if="item.cost" :class="calcProfit(item.gsz, item.code) >= 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'" class="text-[9px] px-1 rounded">
+                            持仓: {{ calcProfit(item.gsz, item.code) }}%
+                        </p>
+                        <p v-else :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="text-[10px]">
+                            今日: {{ item.gszzl ? (item.gszzl >= 0 ? '+' : '') + item.gszzl + '%' : '--' }}
                         </p>
                     </div>
-                    <button @click.stop="removeFav(item.code)" class="text-gray-300 hover:text-red-400 p-2">✕</button>
+                    <button @click.stop="removeFav(item.code)" class="text-gray-300 hover:text-red-400 p-1">✕</button>
                 </div>
             </div>
-            <div v-if="favorites.length === 0" class="text-center py-10 text-gray-400 text-xs">
-                暂无自选，搜索后点击“加入自选”
-            </div>
+            <div v-if="favorites.length === 0" class="text-center py-10 text-gray-400 text-xs">暂无数据</div>
         </div>
     </div>
 
@@ -85,62 +105,84 @@
                 const fund = ref(null);
                 const favorites = ref(JSON.parse(localStorage.getItem('my_lite_funds') || '[]'));
                 const historyData = ref(JSON.parse(localStorage.getItem('fund_history_points') || '{}'));
-                const isUpdating = ref(false); // 加载状态
+                const isUpdating = ref(false);
                 let myChart = null;
 
                 const isFav = computed(() => fund.value && favorites.value.some(f => f.code === fund.value.fundcode));
+                
+                const batchImport = () => {
+                    const input = prompt("请输入：代码,成本（多条请换行）\n例如：\n001592,1.23\n004812,2.56");
+                    if (!input) return;
+                    input.split('\n').forEach(line => {
+                        const [code, cost] = line.split(/[，,]/);
+                        if (code && cost) {
+                            const item = favorites.value.find(f => f.code === code.trim());
+                            if (item) item.cost = cost.trim();
+                            else favorites.value.push({ name: '待加载', code: code.trim(), cost: cost.trim() });
+                        }
+                    });
+                    save();
+                    updateAllFavorites();
+                };
 
-                // 判断是否在交易时间内
+                const getStrategy = (profit) => {
+                    const p = parseFloat(profit);
+                    if (p >= 10) return { title: '达到目标：分批止盈', desc: '收益已超10%，建议落袋为安', icon: '💰', bg: 'bg-red-50 border-red-100', text: 'text-red-700' };
+                    if (p >= 5) return { title: '势头良好：持续观察', desc: '收益超5%，建议设置移动止盈点', icon: '📈', bg: 'bg-orange-50 border-orange-100', text: 'text-orange-700' };
+                    if (p <= -10) return { title: '显著低估：建议补仓', desc: '跌幅超10%，适合分批加仓均摊成本', icon: '💎', bg: 'bg-green-50 border-green-100', text: 'text-green-700' };
+                    if (p <= -5) return { title: '价值区间：定投继续', desc: '轻微浮亏，建议维持原有加仓频率', icon: '🛒', bg: 'bg-blue-50 border-blue-100', text: 'text-blue-700' };
+                    return { title: '波澜不惊：耐心持有', desc: '当前波动较小，不宜频繁操作', icon: '☕', bg: 'bg-gray-50 border-gray-100', text: 'text-gray-600' };
+                };
+
                 const isTradeTime = () => {
                     const now = new Date();
                     const day = now.getDay();
                     const hour = now.getHours();
                     const min = now.getMinutes();
                     const timeStr = `${hour.toString().padStart(2,'0')}${min.toString().padStart(2,'0')}`;
-                    
-                    if (day === 0 || day === 6) return false; // 周末不刷
-                    if ((timeStr >= "0925" && timeStr <= "1135") || (timeStr >= "1255" && timeStr <= "1505")) return true;
-                    return false;
+                    if (day === 0 || day === 6) return false;
+                    return (timeStr >= "0925" && timeStr <= "1135") || (timeStr >= "1255" && timeStr <= "1505");
                 };
 
                 const checkDateReset = () => {
                     const today = new Date().toLocaleDateString();
-                    const lastDate = localStorage.getItem('last_update_date');
-                    if (lastDate !== today) {
+                    if (localStorage.getItem('last_update_date') !== today) {
                         historyData.value = {};
                         localStorage.setItem('fund_history_points', '{}');
                         localStorage.setItem('last_update_date', today);
                     }
                 };
 
+                // 计算盈亏逻辑
+                const calcProfit = (currentGsz, code) => {
+                    const item = favorites.value.find(f => f.code === code);
+                    if (!item || !item.cost || !currentGsz) return 0;
+                    return (((parseFloat(currentGsz) - parseFloat(item.cost)) / parseFloat(item.cost)) * 100).toFixed(2);
+                };
+
+                const getFundCost = (code) => favorites.value.find(f => f.code === code)?.cost;
+
+                const setCost = (item) => {
+                    const val = prompt(`设置 [${item.name}] 的持仓成本:`, item.cost || '');
+                    if (val !== null) { item.cost = val; save(); }
+                };
+
                 const updateChart = () => {
                     const dom = document.getElementById('chart');
                     if (!dom || !fund.value) return;
                     if (!myChart) myChart = echarts.init(dom);
-
                     const points = historyData.value[fund.value.fundcode] || [];
                     const displayPoints = points.length > 0 ? points : [{time: fund.value.gztime.split(' ')[1], val: fund.value.gsz}];
 
                     myChart.setOption({
-                        grid: { left: '15%', right: '5%', top: '15%', bottom: '15%' },
-                        xAxis: { 
-                            type: 'category', 
-                            data: displayPoints.map(p => p.time),
-                            axisLabel: { show: points.length > 5, fontSize: 9, color: '#999', interval: Math.floor(points.length / 5) },
-                            axisLine: { lineStyle: { color: '#eee' } }
-                        },
-                        yAxis: { 
-                            type: 'value', 
-                            scale: true, 
-                            splitLine: { lineStyle: { type: 'dashed', color: '#f3f3f3' } },
-                            axisLabel: { fontSize: 9, color: '#999' }
-                        },
-                        tooltip: { trigger: 'axis', show: true, textStyle: { fontSize: 10 } },
+                        grid: { left: '12%', right: '5%', top: '10%', bottom: '15%' },
+                        xAxis: { type: 'category', data: displayPoints.map(p => p.time), axisLabel: { fontSize: 8, interval: Math.floor(displayPoints.length / 4) } },
+                        yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 8 } },
                         series: [{
                             data: displayPoints.map(p => p.val),
                             type: 'line', smooth: true, showSymbol: false,
                             lineStyle: { color: '#3b82f6', width: 2 },
-                            areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(59,130,246,0.2)'}, {offset: 1, color: 'rgba(59,130,246,0)'}]) }
+                            areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1, [{offset:0, color:'rgba(59,130,246,0.2)'},{offset:1, color:'transparent'}]) }
                         }]
                     }, true);
                 };
@@ -149,11 +191,9 @@
                     if (!searchCode.value || isUpdating.value) return;
                     isUpdating.value = true;
                     checkDateReset();
-                    
                     const script = document.createElement('script');
                     script.src = `https://fundgz.1234567.com.cn/js/${searchCode.value}.js?rt=${Date.now()}`;
                     document.body.appendChild(script);
-
                     script.onload = () => {
                         if(window.__currentFundData) {
                             fund.value = window.__currentFundData;
@@ -163,31 +203,25 @@
                         script.remove();
                         isUpdating.value = false;
                     };
-                    script.onerror = () => { isUpdating.value = false; alert("查询失败，请检查代码"); };
+                    script.onerror = () => { isUpdating.value = false; alert("代码错误"); };
                 };
 
                 const recordPoint = (fData) => {
                     const code = fData.fundcode;
                     const time = fData.gztime.split(' ')[1];
                     const val = parseFloat(fData.gsz);
-                    // 健壮性检查：必须是数字且不为0
                     if (isNaN(val) || val === 0) return;
-
                     if (!historyData.value[code]) historyData.value[code] = [];
                     const points = historyData.value[code];
                     if (points.length === 0 || points[points.length - 1].time !== time) {
                         points.push({ time, val });
-                        if (points.length > 240) points.shift(); // 约一整天的交易点
+                        if (points.length > 240) points.shift();
                         localStorage.setItem('fund_history_points', JSON.stringify(historyData.value));
                     }
                 };
 
                 const updateAllFavorites = () => {
-                    if (!isTradeTime() && favorites.value.length > 0) {
-                        console.log("非交易时段，跳过后台刷新");
-                        return;
-                    }
-                    checkDateReset();
+                    if (!isTradeTime() && favorites.value.length > 0) return;
                     favorites.value.forEach(item => {
                         const s = document.createElement('script');
                         s.src = `https://fundgz.1234567.com.cn/js/${item.code}.js?rt=${Date.now()}`;
@@ -197,10 +231,7 @@
                             if(d && d.fundcode === item.code) {
                                 item.gsz = d.gsz; item.gszzl = d.gszzl;
                                 recordPoint(d);
-                                if (fund.value && fund.value.fundcode === d.fundcode) {
-                                    fund.value = d;
-                                    nextTick(updateChart);
-                                }
+                                if (fund.value?.fundcode === d.fundcode) { fund.value = d; nextTick(updateChart); }
                             }
                             s.remove();
                             save();
@@ -209,10 +240,9 @@
                 };
 
                 const toggleFav = () => {
-                    if (!fund.value) return;
                     const idx = favorites.value.findIndex(f => f.code === fund.value.fundcode);
                     if (idx > -1) favorites.value.splice(idx, 1);
-                    else favorites.value.push({ name: fund.value.name, code: fund.value.fundcode, gsz: fund.value.gsz, gszzl: fund.value.gszzl });
+                    else favorites.value.push({ name: fund.value.name, code: fund.value.fundcode, gsz: fund.value.gsz, gszzl: fund.value.gszzl, cost: '' });
                     save();
                 };
 
@@ -222,11 +252,12 @@
                     checkDateReset();
                     updateAllFavorites();
                     setInterval(updateAllFavorites, 60000);
-                    window.addEventListener('resize', () => myChart && myChart.resize());
+                    window.addEventListener('resize', () => myChart?.resize());
                 });
 
                 return { 
                     searchCode, fund, favorites, isFav, fetchData, toggleFav, isUpdating,
+                    batchImport, getStrategy, calcProfit, getFundCost, setCost,
                     removeFav: (code) => { favorites.value = favorites.value.filter(f => f.code !== code); save(); }
                 };
             }
