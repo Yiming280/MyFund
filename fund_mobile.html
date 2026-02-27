@@ -7,20 +7,17 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
-    <!-- <style>
-        -webkit-tap-highlight-color: transparent;
-    </style> -->
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div id="app" class="max-w-md mx-auto p-4">
         <header class="py-6 text-center">
             <h1 class="text-2xl font-bold text-blue-600">FundLite</h1>
-            <p class="text-xs text-gray-400">无需后端 · 直接查询</p>
+            <p class="text-xs text-gray-400">无需后端 · 自动打点 · 隔天重置</p>
         </header>
 
         <div class="flex gap-2 mb-6">
             <input v-model="searchCode" @keyup.enter="fetchData" placeholder="基金代码 (如 001592)" 
-                   class="flex-1 p-3 rounded-xl border-none shadow focus:ring-2 focus:ring-blue-400 outline-none">
+                    class="flex-1 p-3 rounded-xl border-none shadow focus:ring-2 focus:ring-blue-400 outline-none">
             <button @click="fetchData" class="bg-blue-600 text-white px-5 py-3 rounded-xl shadow hover:bg-blue-700 active:scale-95 transition-transform">查询</button>
         </div>
 
@@ -48,6 +45,7 @@
             </div>
 
             <div id="chart" class="w-full h-44 bg-gray-50 rounded-xl mt-2 overflow-hidden"></div>
+            <p class="text-[9px] text-gray-300 mt-2 text-center italic">数据每分钟自动记录，隔日自动清空曲线</p>
         </div>
 
         <div class="mt-8">
@@ -78,9 +76,7 @@
     </div>
 
     <script>
-        // 定义全局回调，处理天天基金 jsonpgz 格式
         window.jsonpgz = (data) => { window.__currentFundData = data; };
-
         const { createApp, ref, onMounted, computed, nextTick } = Vue;
 
         createApp({
@@ -88,156 +84,150 @@
                 const searchCode = ref('');
                 const fund = ref(null);
                 const favorites = ref(JSON.parse(localStorage.getItem('my_lite_funds') || '[]'));
+                const historyData = ref(JSON.parse(localStorage.getItem('fund_history_points') || '{}'));
+                const isUpdating = ref(false); // 加载状态
                 let myChart = null;
 
                 const isFav = computed(() => fund.value && favorites.value.some(f => f.code === fund.value.fundcode));
 
-                // 统一初始化/获取图表实例函数
-                const getChart = () => {
+                // 判断是否在交易时间内
+                const isTradeTime = () => {
+                    const now = new Date();
+                    const day = now.getDay();
+                    const hour = now.getHours();
+                    const min = now.getMinutes();
+                    const timeStr = `${hour.toString().padStart(2,'0')}${min.toString().padStart(2,'0')}`;
+                    
+                    if (day === 0 || day === 6) return false; // 周末不刷
+                    if ((timeStr >= "0925" && timeStr <= "1135") || (timeStr >= "1255" && timeStr <= "1505")) return true;
+                    return false;
+                };
+
+                const checkDateReset = () => {
+                    const today = new Date().toLocaleDateString();
+                    const lastDate = localStorage.getItem('last_update_date');
+                    if (lastDate !== today) {
+                        historyData.value = {};
+                        localStorage.setItem('fund_history_points', '{}');
+                        localStorage.setItem('last_update_date', today);
+                    }
+                };
+
+                const updateChart = () => {
                     const dom = document.getElementById('chart');
-                    if (!dom) return null;
+                    if (!dom || !fund.value) return;
                     if (!myChart) myChart = echarts.init(dom);
-                    return myChart;
+
+                    const points = historyData.value[fund.value.fundcode] || [];
+                    const displayPoints = points.length > 0 ? points : [{time: fund.value.gztime.split(' ')[1], val: fund.value.gsz}];
+
+                    myChart.setOption({
+                        grid: { left: '15%', right: '5%', top: '15%', bottom: '15%' },
+                        xAxis: { 
+                            type: 'category', 
+                            data: displayPoints.map(p => p.time),
+                            axisLabel: { show: points.length > 5, fontSize: 9, color: '#999', interval: Math.floor(points.length / 5) },
+                            axisLine: { lineStyle: { color: '#eee' } }
+                        },
+                        yAxis: { 
+                            type: 'value', 
+                            scale: true, 
+                            splitLine: { lineStyle: { type: 'dashed', color: '#f3f3f3' } },
+                            axisLabel: { fontSize: 9, color: '#999' }
+                        },
+                        tooltip: { trigger: 'axis', show: true, textStyle: { fontSize: 10 } },
+                        series: [{
+                            data: displayPoints.map(p => p.val),
+                            type: 'line', smooth: true, showSymbol: false,
+                            lineStyle: { color: '#3b82f6', width: 2 },
+                            areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(59,130,246,0.2)'}, {offset: 1, color: 'rgba(59,130,246,0)'}]) }
+                        }]
+                    }, true);
                 };
 
                 const fetchData = async () => {
-                    if (!searchCode.value) return;
+                    if (!searchCode.value || isUpdating.value) return;
+                    isUpdating.value = true;
+                    checkDateReset();
                     
-                    // 1. 立即清空旧数据，并让图表进入加载状态
-                    const chart = getChart();
-                    if (chart) {
-                        chart.clear();
-                        chart.showLoading({ text: '加载中...', color: '#3b82f6', textColor: '#3b82f6', maskColor: 'rgba(255,255,255,0.8)' });
-                    }
-
-                    // 2. 获取基础估值数据 (JSONP)
                     const script = document.createElement('script');
                     script.src = `https://fundgz.1234567.com.cn/js/${searchCode.value}.js?rt=${Date.now()}`;
-                    script.onerror = () => {
-                        alert("基金代码无效或网络请求失败");
-                        if (chart) chart.hideLoading();
-                    };
                     document.body.appendChild(script);
 
                     script.onload = () => {
-                        fund.value = window.__currentFundData;
-                        script.remove();
-
-                        // 3. 基础信息加载完后，请求分时走势图
-                        nextTick(() => {
-                            fetchTrendData(searchCode.value);
-                        });
-                        
-                        updateAllFavorites();
-                    };
-                };
-
-                const fetchTrendData = (code) => {
-                    const chart = getChart();
-                    const callbackName = `trend_${Date.now()}`;
-                    
-                    window[callbackName] = (res) => {
-                        if (chart) chart.hideLoading();
-                        
-                        if (res && res.Data && res.Data.length > 0) {
-                            const xData = res.Data.map(p => p.time);
-                            const yData = res.Data.map(p => parseFloat(p.data));
-                            
-                            chart.setOption({
-                                grid: { left: '12%', right: '5%', top: '10%', bottom: '15%' },
-                                tooltip: { trigger: 'axis', show: true },
-                                xAxis: { 
-                                    type: 'category', 
-                                    data: xData, 
-                                    axisLabel: { show: false }, 
-                                    axisLine: { show: false }, 
-                                    axisTick: { show: false } 
-                                },
-                                yAxis: { 
-                                    type: 'value', 
-                                    scale: true, 
-                                    splitLine: { lineStyle: { type: 'dashed', color: '#eee' } },
-                                    axisLabel: { fontSize: 10, color: '#999' }
-                                },
-                                series: [{
-                                    data: yData,
-                                    type: 'line',
-                                    smooth: true,
-                                    showSymbol: false,
-                                    lineStyle: { color: '#3b82f6', width: 2 },
-                                    areaStyle: {
-                                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                                            { offset: 0, color: 'rgba(59,130,246,0.3)' },
-                                            { offset: 1, color: 'rgba(59,130,246,0)' }
-                                        ])
-                                    }
-                                }]
-                            });
-                        } else {
-                            // 接口无数据（周末、深夜或新基金）
-                            if (chart) {
-                                chart.showLoading({ 
-                                    text: '今日暂无分时数据\n(周末或非交易时段)', 
-                                    showSpinner: false,
-                                    textColor: '#9ca3af',
-                                    maskColor: 'rgba(255, 255, 255, 0.9)'
-                                });
-                            }
+                        if(window.__currentFundData) {
+                            fund.value = window.__currentFundData;
+                            recordPoint(fund.value);
+                            nextTick(updateChart);
                         }
-                        delete window[callbackName];
+                        script.remove();
+                        isUpdating.value = false;
                     };
-
-                    const tScript = document.createElement('script');
-                    tScript.src = `https://fundmobapi.1234567.com.cn/FundMApi/FundVariatChart.ashx?FCODE=${code}&deviceid=123&plat=Wap&product=EFund&version=2.0&callback=${callbackName}`;
-                    document.body.appendChild(tScript);
-                    tScript.onload = () => tScript.remove();
+                    script.onerror = () => { isUpdating.value = false; alert("查询失败，请检查代码"); };
                 };
 
-                const updateAllFavorites = async () => {
-                    for (let item of favorites.value) {
+                const recordPoint = (fData) => {
+                    const code = fData.fundcode;
+                    const time = fData.gztime.split(' ')[1];
+                    const val = parseFloat(fData.gsz);
+                    // 健壮性检查：必须是数字且不为0
+                    if (isNaN(val) || val === 0) return;
+
+                    if (!historyData.value[code]) historyData.value[code] = [];
+                    const points = historyData.value[code];
+                    if (points.length === 0 || points[points.length - 1].time !== time) {
+                        points.push({ time, val });
+                        if (points.length > 240) points.shift(); // 约一整天的交易点
+                        localStorage.setItem('fund_history_points', JSON.stringify(historyData.value));
+                    }
+                };
+
+                const updateAllFavorites = () => {
+                    if (!isTradeTime() && favorites.value.length > 0) {
+                        console.log("非交易时段，跳过后台刷新");
+                        return;
+                    }
+                    checkDateReset();
+                    favorites.value.forEach(item => {
                         const s = document.createElement('script');
                         s.src = `https://fundgz.1234567.com.cn/js/${item.code}.js?rt=${Date.now()}`;
                         document.body.appendChild(s);
                         s.onload = () => {
                             const d = window.__currentFundData;
-                            item.gsz = d.gsz;
-                            item.gszzl = d.gszzl;
+                            if(d && d.fundcode === item.code) {
+                                item.gsz = d.gsz; item.gszzl = d.gszzl;
+                                recordPoint(d);
+                                if (fund.value && fund.value.fundcode === d.fundcode) {
+                                    fund.value = d;
+                                    nextTick(updateChart);
+                                }
+                            }
                             s.remove();
                             save();
                         };
-                    }
+                    });
                 };
 
                 const toggleFav = () => {
                     if (!fund.value) return;
                     const idx = favorites.value.findIndex(f => f.code === fund.value.fundcode);
-                    if (idx > -1) {
-                        favorites.value.splice(idx, 1);
-                    } else {
-                        favorites.value.push({
-                            name: fund.value.name,
-                            code: fund.value.fundcode,
-                            gsz: fund.value.gsz,
-                            gszzl: fund.value.gszzl
-                        });
-                    }
+                    if (idx > -1) favorites.value.splice(idx, 1);
+                    else favorites.value.push({ name: fund.value.name, code: fund.value.fundcode, gsz: fund.value.gsz, gszzl: fund.value.gszzl });
                     save();
                 };
 
                 const save = () => localStorage.setItem('my_lite_funds', JSON.stringify(favorites.value));
 
                 onMounted(() => {
+                    checkDateReset();
                     updateAllFavorites();
-                    // 每分钟自动刷新一次自选列表
                     setInterval(updateAllFavorites, 60000);
+                    window.addEventListener('resize', () => myChart && myChart.resize());
                 });
 
                 return { 
-                    searchCode, fund, favorites, isFav, fetchData, toggleFav,
-                    removeFav: (code) => {
-                        favorites.value = favorites.value.filter(f => f.code !== code);
-                        save();
-                    }
+                    searchCode, fund, favorites, isFav, fetchData, toggleFav, isUpdating,
+                    removeFav: (code) => { favorites.value = favorites.value.filter(f => f.code !== code); save(); }
                 };
             }
         }).mount('#app');

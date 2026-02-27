@@ -98,12 +98,15 @@
                 });
 
                 // 【2. 渲染图表函数】
-                const renderChart = (xData, yData) => {
+                const renderChart = (xData, yData, hintText = '') => {
                     const chartDom = document.getElementById('chart');
                     if (!chartDom) return;
                     if (!chart) chart = echarts.init(chartDom);
                     
-                    chart.setOption({
+                    // 先隐藏加载状态
+                    chart.hideLoading();
+                    
+                    const option = {
                         tooltip: { trigger: 'axis' },
                         xAxis: { type: 'category', data: xData },
                         yAxis: { type: 'value', scale: true },
@@ -114,7 +117,24 @@
                             areaStyle: { color: 'rgba(59, 130, 246, 0.1)' },
                             lineStyle: { color: '#3b82f6', width: 2 }
                         }]
-                    }, true);
+                    };
+                    
+                    // 如果有提示文字
+                    if (hintText) {
+                        option.graphic = {
+                            type: 'text',
+                            left: 'center',
+                            top: 'middle',
+                            style: {
+                                text: hintText,
+                                fontSize: 14,
+                                fill: '#9ca3af',
+                                textAlign: 'center'
+                            }
+                        };
+                    }
+                    
+                    chart.setOption(option, true);
                 };
 
                 // 【3. 更新自选列表所有数据的实时数值】
@@ -134,6 +154,13 @@
                 // 【4. 查询按钮的核心逻辑】
                 const fetchData = async () => {
                     if (!searchCode.value) return;
+                    
+                    // 获取图表实例并显示加载状态
+                    const chartDom = document.getElementById('chart');
+                    if (chartDom && chart) {
+                        chart.showLoading({ text: '加载中...', color: '#3b82f6', textColor: '#3b82f6', maskColor: 'rgba(255,255,255,0.8)' });
+                    }
+                    
                     try {
                         // 先拿基础信息
                         const resBase = await fetch(`http://127.0.0.1:5000/get_fund_realtime?code=${searchCode.value}`);
@@ -142,7 +169,25 @@
 
                         // 再根据模式画图
                         if (showType.value === 'realtime') {
-                            renderChart(["昨日净值", "今日估值"], [parseFloat(baseData.dwjz), parseFloat(baseData.gsz)]);
+                            // 获取分时走势数据
+                            try {
+                                const resTrend = await fetch(`http://127.0.0.1:5000/get_fund_trend?code=${searchCode.value}`);
+                                const trendData = await resTrend.json();
+                                console.log('分时数据:', trendData);
+                                if (trendData.success && trendData.data && trendData.data.length > 0) {
+                                    const xData = trendData.data.map(p => p.time);
+                                    const yData = trendData.data.map(p => parseFloat(p.data));
+                                    renderChart(xData, yData);
+                                } else {
+                                    // 如果没有分时数据（周末、非交易时段），显示昨日净值和今日估值
+                                    const message = trendData.message || '非交易时间\n暂无分时数据';
+                                    renderChart(["昨日净值", "今日估值"], [parseFloat(baseData.dwjz), parseFloat(baseData.gsz)], message);
+                                }
+                            } catch (trendErr) {
+                                console.error("获取分时数据失败", trendErr);
+                                // 降级显示两个点
+                                renderChart(["昨日净值", "今日估值"], [parseFloat(baseData.dwjz), parseFloat(baseData.gsz)], '获取分时数据失败');
+                            }
                         } else {
                             const resHist = await fetch(`http://127.0.0.1:5000/get_fund_history?code=${searchCode.value}`);
                             const histData = await resHist.json();
