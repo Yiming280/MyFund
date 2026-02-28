@@ -14,6 +14,7 @@
             <h1 class="text-2xl font-bold text-blue-600">FundLite</h1>
             <p class="text-xs text-gray-400">实时估值 · 成本还原 · 休市自动重置</p>
             <button @click="batchImport" class="text-[10px] text-blue-500 underline mt-1">批量同步持仓</button>
+            <button @click="exportData" class="text-[10px] text-gray-400 underline ml-2">备份数据</button>
         </header>
 
         <div class="flex gap-2 mb-6">
@@ -196,6 +197,16 @@
                     updateAllFavorites();
                 };
 
+                const exportData = () => {
+                    const data = JSON.stringify(favorites.value);
+                    const blob = new Blob([data], {type: 'application/json'});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `fund_backup_${new Date().toLocaleDateString()}.json`;
+                    a.click();
+                };
+
                 const getFundCost = (code) => favorites.value.find(f => f.code === code)?.cost;
 
                 // 判断weekend和交易时段的核心函数
@@ -359,7 +370,7 @@
 
                 return { 
                     searchCode, fund, favorites, isFav, fetchData, toggleFav, isUpdating,
-                    calcProfit, getFundCost, getStrategy, batchImport, setCost, setHoldAmount,
+                    calcProfit, getFundCost, getStrategy, batchImport, exportData, setCost, setHoldAmount,
                     removeFav: (code) => { favorites.value = favorites.value.filter(f => f.code !== code); save(); }
                 };
             }
