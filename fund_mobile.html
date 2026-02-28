@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FundLite Pro+</title>
+    <title>FundLite</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
@@ -12,8 +12,8 @@
     <div id="app" class="max-w-md mx-auto p-4 pb-10">
         <header class="py-6 text-center">
             <h1 class="text-2xl font-bold text-blue-600">FundLite</h1>
-            <p class="text-[10px] text-gray-400">实时估值 · 科学策略 · 批量同步</p>
-            <button @click="batchImport" class="text-[10px] text-blue-500 underline mt-1">批量同步持仓成本</button>
+            <p class="text-xs text-gray-400">实时估值 · 成本还原 · 休市自动重置</p>
+            <button @click="batchImport" class="text-[10px] text-blue-500 underline mt-1">批量同步持仓</button>
         </header>
 
         <div class="flex gap-2 mb-6">
@@ -32,7 +32,6 @@
                     {{ isFav ? '⭐ 已在自选' : '➕ 加入自选' }}
                 </button>
             </div>
-            
             <div class="flex justify-between items-end mb-4">
                 <div>
                     <p class="text-[10px] text-gray-400">当前估值 ({{ fund.gztime }})</p>
@@ -58,35 +57,74 @@
         </div>
 
         <div class="mt-8">
-            <h3 class="font-bold text-gray-700 mb-3 ml-2 italic text-sm">我的持仓</h3>
+            <h3 class="font-bold text-gray-700 mb-3 ml-2 italic text-sm flex justify-between items-center">
+                <span>我的持仓</span>
+                <span class="text-[10px] font-normal text-gray-400">点击金额/成本可编辑</span>
+            </h3>
+            
             <div v-for="item in favorites" :key="item.code" 
-                 @click="searchCode = item.code; fetchData()"
-                 class="bg-white p-4 rounded-xl shadow-sm mb-3 flex justify-between items-center border-l-4 border-blue-500 cursor-pointer active:bg-gray-50">
-                <div class="flex-1 min-w-0 pr-4">
-                    <p class="font-bold text-gray-800 text-sm truncate">{{ item.name }}</p>
-                    <p class="text-[10px] text-gray-400">
-                        {{ item.code }} | 持仓成本: 
-                        <span @click.stop="setCost(item)" class="text-blue-500 underline underline-offset-2">{{ item.cost || '未设置' }}</span>
-                    </p>
-                </div>
-                <div class="flex items-center gap-4">
-                    <div class="text-right">
-                        <p :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="font-bold text-sm">
+                @click="searchCode = item.code; fetchData()"
+                class="bg-white rounded-xl shadow-sm mb-3 border-l-4 border-blue-500 overflow-hidden cursor-pointer active:bg-gray-50 transition-all">
+                
+                <div class="grid grid-cols-3 p-4 items-center gap-2">
+                    
+                    <div class="flex flex-col min-w-0">
+                        <p class="font-bold text-gray-800 text-sm truncate mb-1">{{ item.name }}</p>
+                        <div class="space-y-0.5">
+                            <p class="text-[10px] text-gray-500 flex items-center">
+                                <span class="w-8 opacity-60">金额</span>
+                                <span @click.stop="setHoldAmount(item)" class="text-blue-600 font-medium hover:underline tracking-tighter">
+                                    ¥{{ item.holdValue || '0.00' }}
+                                </span>
+                            </p>
+                            <p class="text-[10px] text-gray-500 flex items-center">
+                                <span class="w-8 opacity-60">成本</span>
+                                <span @click.stop="setCost(item)" class="text-blue-600 font-medium hover:underline tracking-tighter">
+                                    {{ item.cost || '未设' }}
+                                </span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col items-center border-x border-gray-50">
+                        <p :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-600'" class="font-black text-base tabular-nums">
                             {{ item.gsz || '--' }}
                         </p>
-                        <p v-if="item.cost" :class="calcProfit(item.gsz, item.code) >= 0 ? 'text-red-500' : 'text-green-500'" class="text-[10px] font-bold">
-                            持仓: {{ calcProfit(item.gsz, item.code) }}%
-                        </p>
-                        <p v-else :class="item.gszzl >= 0 ? 'text-red-500' : 'text-green-500'" class="text-[10px]">
-                            今日: {{ item.gszzl ? (item.gszzl >= 0 ? '+' : '') + item.gszzl + '%' : '--' }}
+                        <p :class="item.gszzl >= 0 ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'" 
+                        class="text-[10px] px-1.5 py-0.5 rounded font-bold mt-1">
+                            {{ item.gszzl ? (item.gszzl >= 0 ? '+' : '') + item.gszzl + '%' : '--' }}
                         </p>
                     </div>
-                    <button @click.stop="removeFav(item.code)" class="text-gray-300 hover:text-red-400 p-2">✕</button>
+
+                    <div class="flex items-center justify-end gap-2">
+                        <div class="text-right">
+                            <template v-if="item.cost">
+                                <p :class="calcProfit(item.gsz, item.code) >= 0 ? 'text-red-500' : 'text-green-600'" 
+                                class="font-bold text-sm tabular-nums">
+                                    {{ calcProfit(item.gsz, item.code) >= 0 ? '+' : '' }}{{ (item.holdValue * calcProfit(item.gsz, item.code) / 100).toFixed(2) }}
+                                </p>
+                                <p :class="calcProfit(item.gsz, item.code) >= 0 ? 'text-red-400' : 'text-green-400'" 
+                                class="text-[10px] font-medium leading-none">
+                                    {{ calcProfit(item.gsz, item.code) >= 0 ? '+' : '' }}{{ calcProfit(item.gsz, item.code) }}%
+                                </p>
+                            </template>
+                            <p v-else class="text-[10px] text-gray-300 italic">未设成本</p>
+                        </div>
+                        <button @click.stop="removeFav(item.code)" class="text-gray-200 hover:text-red-400 transition-colors p-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+
                 </div>
             </div>
-            <div v-if="favorites.length === 0" class="text-center py-10 text-gray-400 text-xs">暂无自选</div>
+            
+            <div v-if="favorites.length === 0" class="text-center py-12">
+                <div class="text-gray-300 text-3xl mb-2">📊</div>
+                <p class="text-gray-400 text-xs">暂无自选，搜索后点击“加入自选”</p>
+            </div>
         </div>
-    </div>
 
     <script>
         window.jsonpgz = (data) => { window.__currentFundData = data; };
@@ -103,6 +141,24 @@
 
                 const isFav = computed(() => fund.value && favorites.value.some(f => f.code === fund.value.fundcode));
 
+                // 1. 设置持仓成本 (手动输入)
+                const setCost = (item) => {
+                    const val = prompt(`[${item.name}]\n请输入持仓成本价 (均价):`, item.cost || "");
+                    if (val !== null) {
+                        item.cost = val;
+                        save();
+                    }
+                };
+
+                // 2. 设置持有金额 (手动输入)
+                const setHoldAmount = (item) => {
+                    const val = prompt(`[${item.name}]\n请输入当前持有总金额 (元):`, item.holdValue || "");
+                    if (val !== null) {
+                        item.holdValue = val;
+                        save();
+                    }
+                };
+                
                 // 核心函数 1: 科学建议算法 (阶梯加仓/目标止盈)
                 const getStrategy = (profit) => {
                     const p = parseFloat(profit);
@@ -122,14 +178,14 @@
 
                 // 核心函数 3: 批量同步
                 const batchImport = () => {
-                    const input = prompt("请按格式输入：代码,成本（多条请换行）\n例如：\n001592,1.234\n004812,2.567");
+                    const input = prompt("批量输入：代码,成本,总金额（多条换行）\n001592,1.23,5000");
                     if (!input) return;
                     input.split('\n').forEach(line => {
-                        const [code, cost] = line.split(/[，,]/);
+                        const [code, cost, val] = line.split(/[，,]/);
                         if (code && cost) {
                             const item = favorites.value.find(f => f.code === code.trim());
-                            if (item) item.cost = cost.trim();
-                            else favorites.value.push({ name: '待刷新', code: code.trim(), cost: cost.trim() });
+                            if (item) { item.cost = cost; item.holdValue = val; }
+                            else favorites.value.push({ name: '待加载', code: code.trim(), cost: cost, holdValue: val });
                         }
                     });
                     save();
@@ -138,54 +194,71 @@
 
                 const getFundCost = (code) => favorites.value.find(f => f.code === code)?.cost;
 
-                const setCost = (item) => {
-                    const val = prompt(`设置 [${item.name}] 的持仓成本价:`, item.cost || '');
-                    if (val !== null) { item.cost = val; save(); }
-                };
-
-                // 原有逻辑保持
+                // 判断weekend和交易时段的核心函数
                 const isTradeTime = () => {
                     const now = new Date();
-                    const day = now.getDay();
+                    const day = now.getDay(); // 0是周日，6是周六
                     const hour = now.getHours();
                     const min = now.getMinutes();
                     const timeStr = `${hour.toString().padStart(2,'0')}${min.toString().padStart(2,'0')}`;
-                    if (day === 0 || day === 6) return false;
-                    return (timeStr >= "0925" && timeStr <= "1135") || (timeStr >= "1255" && timeStr <= "1505");
+
+                    // 判断是否为周末
+                    const isWeekend = (day === 0 || day === 6);
+                    // 判断是否在交易时段 (9:25-11:35, 12:55-15:05)
+                    const isTradingHour = (timeStr >= "0925" && timeStr <= "1135") || (timeStr >= "1255" && timeStr <= "1505");
+                    
+                    return !isWeekend && isTradingHour;
                 };
 
-                const checkDateReset = () => {
-                    const today = new Date().toLocaleDateString();
-                    if (localStorage.getItem('last_update_date') !== today) {
-                        historyData.value = {};
-                        localStorage.setItem('fund_history_points', '{}');
-                        localStorage.setItem('last_update_date', today);
-                    }
+                // 新增：判断今天是否为工作日（用于图表重置逻辑）
+                const isWorkDay = () => {
+                    const day = new Date().getDay();
+                    return day !== 0 && day !== 6;
                 };
 
+                // 3. 修正图表休市显示逻辑
                 const updateChart = () => {
                     const dom = document.getElementById('chart');
                     if (!dom || !fund.value) return;
                     if (!myChart) myChart = echarts.init(dom);
                     const points = historyData.value[fund.value.fundcode] || [];
-                    const displayPoints = points.length > 0 ? points : [{time: fund.value.gztime.split(' ')[1], val: fund.value.gsz}];
+                    
+                    // 获取当前时间判断
+                    const now = new Date();
+                    const day = now.getDay();
+                    const isWeekend = (day === 0 || day === 6);
 
+                    // 如果是周末或者打点数据为空，显示休市
+                    if (isWeekend || (points.length === 0 && !isTradeTime())) {
+                        myChart.setOption({
+                            title: { 
+                                text: isWeekend ? '周末休市中' : '等待开盘...', 
+                                left: 'center', top: 'center', 
+                                textStyle: { color: '#ccc', fontSize: 13, fontWeight: 'normal' } 
+                            },
+                            xAxis: { show: false }, 
+                            yAxis: { show: false }, 
+                            grid: { show: false },
+                            series: []
+                        }, true);
+                        return;
+                    }
+
+                    // 绘图逻辑保持原样，确保网格和轴线显示
                     myChart.setOption({
-                        grid: { left: '15%', right: '5%', top: '15%', bottom: '15%' },
+                        title: { show: false },
+                        grid: { left: '15%', right: '5%', top: '15%', bottom: '15%', show: true },
                         xAxis: { 
-                            type: 'category', 
-                            data: displayPoints.map(p => p.time),
-                            axisLabel: { fontSize: 9, color: '#999', interval: Math.floor(displayPoints.length / 5) }
+                            show: true, type: 'category', data: points.map(p => p.time),
+                            axisLabel: { fontSize: 9, color: '#999', interval: Math.floor(points.length / 5) }
                         },
                         yAxis: { 
-                            type: 'value', 
-                            scale: true, 
+                            show: true, type: 'value', scale: true, 
                             splitLine: { show: true, lineStyle: { type: 'dashed', color: '#f3f3f3' } },
                             axisLabel: { fontSize: 9, color: '#999' }
                         },
-                        tooltip: { trigger: 'axis', show: true },
                         series: [{
-                            data: displayPoints.map(p => p.val),
+                            data: points.map(p => p.val),
                             type: 'line', smooth: true, showSymbol: false,
                             lineStyle: { color: '#3b82f6', width: 2 },
                             areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(59,130,246,0.2)'}, {offset: 1, color: 'transparent'}]) }
@@ -196,7 +269,6 @@
                 const fetchData = async () => {
                     if (!searchCode.value || isUpdating.value) return;
                     isUpdating.value = true;
-                    checkDateReset();
                     const script = document.createElement('script');
                     script.src = `https://fundgz.1234567.com.cn/js/${searchCode.value}.js?rt=${Date.now()}`;
                     document.body.appendChild(script);
@@ -228,7 +300,6 @@
 
                 const updateAllFavorites = () => {
                     if (!isTradeTime() && favorites.value.length > 0) return;
-                    checkDateReset();
                     favorites.value.forEach(item => {
                         const s = document.createElement('script');
                         s.src = `https://fundgz.1234567.com.cn/js/${item.code}.js?rt=${Date.now()}`;
@@ -236,30 +307,24 @@
                         s.onload = () => {
                             const d = window.__currentFundData;
                             if(d && d.fundcode === item.code) {
-                                item.name = d.name; item.gsz = d.gsz; item.gszzl = d.gszzl;
+                                item.gsz = d.gsz; item.gszzl = d.gszzl; item.dwjz = d.dwjz; // 同步昨日净值
                                 recordPoint(d);
-                                if (fund.value && fund.value.fundcode === d.fundcode) {
-                                    fund.value = d; nextTick(updateChart);
-                                }
                             }
                             s.remove();
-                            save();
                         };
                     });
                 };
 
                 const toggleFav = () => {
-                    if (!fund.value) return;
                     const idx = favorites.value.findIndex(f => f.code === fund.value.fundcode);
                     if (idx > -1) favorites.value.splice(idx, 1);
-                    else favorites.value.push({ name: fund.value.name, code: fund.value.fundcode, gsz: fund.value.gsz, gszzl: fund.value.gszzl, cost: '' });
+                    else favorites.value.push({ name: fund.value.name, code: fund.value.fundcode, dwjz: fund.value.dwjz });
                     save();
                 };
 
                 const save = () => localStorage.setItem('my_lite_funds', JSON.stringify(favorites.value));
 
                 onMounted(() => {
-                    checkDateReset();
                     updateAllFavorites();
                     setInterval(updateAllFavorites, 60000);
                     window.addEventListener('resize', () => myChart && myChart.resize());
@@ -267,7 +332,7 @@
 
                 return { 
                     searchCode, fund, favorites, isFav, fetchData, toggleFav, isUpdating,
-                    calcProfit, getFundCost, getStrategy, batchImport, setCost,
+                    calcProfit, getFundCost, getStrategy, batchImport, setCost, setHoldAmount,
                     removeFav: (code) => { favorites.value = favorites.value.filter(f => f.code !== code); save(); }
                 };
             }
