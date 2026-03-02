@@ -15,6 +15,7 @@
             <p class="text-xs text-gray-400">实时估值 · 成本还原 · 休市自动重置</p>
             <button @click="batchImport" class="text-[10px] text-blue-500 underline mt-1">批量同步持仓</button>
             <button @click="exportData" class="text-[10px] text-gray-400 underline ml-2">备份数据</button>
+            <button @click="debugHistory" class="text-[10px] text-green-500 underline ml-2">调试历史数据</button>
         </header>
 
         <div class="flex gap-2 mb-6">
@@ -207,6 +208,13 @@
                     a.click();
                 };
 
+                // 添加一个调试函数来查看历史数据
+                const debugHistory = () => {
+                    console.log('当前历史数据:', historyData.value);
+                    console.log('localStorage中的fund_history_points:', localStorage.getItem('fund_history_points'));
+                    alert(`历史数据已输出到控制台，请按F12查看`);
+                };
+
                 const getFundCost = (code) => favorites.value.find(f => f.code === code)?.cost;
 
                 // 判断weekend和交易时段的核心函数
@@ -301,15 +309,39 @@
 
                 const recordPoint = (fData) => {
                     const code = fData.fundcode;
-                    const time = fData.gztime.split(' ')[1];
+                    const fullGzTime = fData.gztime; // 格式如 "2026-03-02 10:30"
+                    const datePart = fullGzTime.split(' ')[0]; // 获取日期 "2026-03-02"
+                    const timePart = fullGzTime.split(' ')[1]; // 获取时间 "10:30"
                     const val = parseFloat(fData.gsz);
+                    
                     if (isNaN(val) || val === 0) return;
+
+                    // 检查日期。如果存储的数据日期不是今天，则清空该基金的历史点位
+                    if (!historyData.value["_last_update_date"] || historyData.value["_last_update_date"] !== datePart) {
+                        console.log(`日期变更: ${historyData.value["_last_update_date"]} -> ${datePart}`);
+                        // 发现日期变更，只清空基金数据，保留日期标记和其他数据
+                        const newHistoryData = { "_last_update_date": datePart };
+                        // 保留其他可能存在的非基金数据
+                        Object.keys(historyData.value).forEach(key => {
+                            if (key !== "_last_update_date" && key !== code) {
+                                newHistoryData[key] = historyData.value[key];
+                            }
+                        });
+                        historyData.value = newHistoryData;
+                        console.log('已重置历史数据，保留日期标记');
+                    }
+
                     if (!historyData.value[code]) historyData.value[code] = [];
                     const points = historyData.value[code];
-                    if (points.length === 0 || points[points.length - 1].time !== time) {
-                        points.push({ time, val });
+                    
+                    // 只有在时间点不同时才记录，防止重复打点
+                    if (points.length === 0 || points[points.length - 1].time !== timePart) {
+                        points.push({ time: timePart, val: val });
+                        console.log(`记录点位: ${code} - ${timePart} - ${val}`);
+                        // 保留最近4小时的数据(1分钟一个点共240个)
                         if (points.length > 240) points.shift();
                         localStorage.setItem('fund_history_points', JSON.stringify(historyData.value));
+                        console.log(`已保存到localStorage，当前${code}有${points.length}个点`);
                     }
                 };
 
@@ -371,7 +403,8 @@
                 return { 
                     searchCode, fund, favorites, isFav, fetchData, toggleFav, isUpdating,
                     calcProfit, getFundCost, getStrategy, batchImport, exportData, setCost, setHoldAmount,
-                    removeFav: (code) => { favorites.value = favorites.value.filter(f => f.code !== code); save(); }
+                    removeFav: (code) => { favorites.value = favorites.value.filter(f => f.code !== code); save(); },
+                    debugHistory
                 };
             }
         }).mount('#app');
