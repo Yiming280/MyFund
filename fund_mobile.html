@@ -16,6 +16,7 @@
             <button @click="batchImport" class="text-[10px] text-blue-500 underline mt-1">批量同步持仓</button>
             <button @click="exportData" class="text-[10px] text-gray-400 underline ml-2">备份数据</button>
             <button @click="debugHistory" class="text-[10px] text-green-500 underline ml-2">调试历史数据</button>
+            <button @click="forceClearHistory" class="text-[10px] text-red-500 underline ml-2">强制清理历史数据</button>
         </header>
 
         <div class="flex gap-2 mb-6">
@@ -210,9 +211,58 @@
 
                 // 添加一个调试函数来查看历史数据
                 const debugHistory = () => {
-                    console.log('当前历史数据:', historyData.value);
+                    console.log('=== 历史数据调试信息 ===');
+                    console.log('当前历史数据对象:', historyData.value);
                     console.log('localStorage中的fund_history_points:', localStorage.getItem('fund_history_points'));
-                    alert(`历史数据已输出到控制台，请按F12查看`);
+                    
+                    // 显示日期信息
+                    const currentDate = historyData.value["_last_update_date"];
+                    const today = formatDate(new Date());
+                    console.log(`当前存储日期: ${currentDate}`);
+                    console.log(`今天日期: ${today}`);
+                    console.log(`日期是否匹配: ${currentDate === today}`);
+                    
+                    // 显示跨天检测状态
+                    const isCrossDay = currentDate && currentDate !== today;
+                    console.log(`是否跨天: ${isCrossDay ? '是' : '否'}`);
+                    
+                    // 显示各基金的数据点数量
+                    Object.keys(historyData.value).forEach(key => {
+                        if (key !== "_last_update_date") {
+                            const points = historyData.value[key];
+                            console.log(`基金 ${key} 的数据点数量: ${points.length}`);
+                            if (points.length > 0) {
+                                console.log(`  第一个点: ${points[0].time} - ${points[0].val}`);
+                                console.log(`  最后一个点: ${points[points.length - 1].time} - ${points[points.length - 1].val}`);
+                                console.log(`  数据时间跨度: ${points[0].time} 到 ${points[points.length - 1].time}`);
+                            }
+                        }
+                    });
+                    
+                    // 显示清理建议
+                    if (isCrossDay) {
+                        console.log('⚠️  检测到跨天，建议清理历史数据');
+                    } else {
+                        console.log('✅ 日期正常，数据应该可以正确连接');
+                    }
+                    
+                    alert(`历史数据调试信息已输出到控制台，请按F12查看详细信息\n\n当前状态: ${isCrossDay ? '跨天' : '正常'}`);
+                };
+
+                // 强制清理历史数据的函数
+                const forceClearHistory = () => {
+                    if (confirm('确定要清理所有历史数据吗？此操作不可恢复。')) {
+                        console.log('用户手动触发强制清理历史数据');
+                        historyData.value = { "_last_update_date": formatDate(new Date()) };
+                        localStorage.setItem('fund_history_points', JSON.stringify(historyData.value));
+                        console.log('历史数据已强制清理');
+                        alert('历史数据已清理，图表将重新开始记录');
+                        
+                        // 重新渲染图表
+                        if (fund.value) {
+                            nextTick(updateChart);
+                        }
+                    }
                 };
 
                 const getFundCost = (code) => favorites.value.find(f => f.code === code)?.cost;
@@ -237,6 +287,37 @@
                 const isWorkDay = () => {
                     const day = new Date().getDay();
                     return day !== 0 && day !== 6;
+                };
+
+                // 统一的日期格式化函数
+                const formatDate = (date) => {
+                    if (!date) return '';
+                    if (typeof date === 'string') {
+                        // 如果是字符串，尝试解析并格式化
+                        const d = new Date(date);
+                        if (isNaN(d.getTime())) return '';
+                        return d.toISOString().split('T')[0];
+                    }
+                    // 如果是Date对象
+                    return date.toISOString().split('T')[0];
+                };
+
+                // 新增：自动清理历史数据的函数（在非交易时段调用）
+                const autoClearHistory = () => {
+                    const today = formatDate(new Date());
+                    const storedDate = historyData.value["_last_update_date"];
+                    
+                    console.log(`[autoClearHistory] 今天日期: ${today}, 存储日期: ${storedDate}`);
+                    
+                    // 如果存储的日期不是今天，说明跨天了，需要清理
+                    if (storedDate && storedDate !== today) {
+                        console.log(`检测到跨天: ${storedDate} -> ${today}，自动清理历史数据`);
+                        historyData.value = { "_last_update_date": today };
+                        localStorage.setItem('fund_history_points', JSON.stringify(historyData.value));
+                        console.log('历史数据已自动清理');
+                        return true; // 返回true表示进行了清理
+                    }
+                    return false; // 返回false表示没有清理
                 };
 
                 // 3. 修正图表休市显示逻辑
@@ -316,19 +397,23 @@
                     
                     if (isNaN(val) || val === 0) return;
 
-                    // 检查日期。如果存储的数据日期不是今天，则清空该基金的历史点位
-                    if (!historyData.value["_last_update_date"] || historyData.value["_last_update_date"] !== datePart) {
-                        console.log(`日期变更: ${historyData.value["_last_update_date"]} -> ${datePart}`);
-                        // 发现日期变更，只清空基金数据，保留日期标记和其他数据
-                        const newHistoryData = { "_last_update_date": datePart };
-                        // 保留其他可能存在的非基金数据
-                        Object.keys(historyData.value).forEach(key => {
-                            if (key !== "_last_update_date" && key !== code) {
-                                newHistoryData[key] = historyData.value[key];
-                            }
-                        });
-                        historyData.value = newHistoryData;
-                        console.log('已重置历史数据，保留日期标记');
+                    // 使用统一的日期格式化函数
+                    const today = formatDate(new Date());
+                    const fundDate = formatDate(datePart);
+                    
+                    console.log(`[recordPoint] 基金日期: ${fundDate}, 今天日期: ${today}, 存储日期: ${historyData.value["_last_update_date"]}`);
+
+                    // 检查是否跨天。如果基金日期与今天日期不匹配，说明跨天了，需要清理
+                    if (fundDate !== today) {
+                        console.log(`检测到跨天: 基金数据日期 ${fundDate} 与今天 ${today} 不匹配，清理历史数据`);
+                        historyData.value = { "_last_update_date": today };
+                        console.log('历史数据已完全重置');
+                    } else {
+                        // 同一天的数据，检查存储的日期标记
+                        if (!historyData.value["_last_update_date"] || historyData.value["_last_update_date"] !== today) {
+                            console.log(`检测到首次记录今天的数据: ${today}`);
+                            historyData.value["_last_update_date"] = today;
+                        }
                     }
 
                     if (!historyData.value[code]) historyData.value[code] = [];
@@ -346,8 +431,17 @@
                 };
 
                 const updateAllFavorites = () => {
-                    const isWeekend = (new Date().getDay() === 0 || new Date().getDay() === 6);
-                    if (isWeekend && favorites.value.length > 0 && favorites.value[0].gsz) return;
+                    if (!isTradeTime() && favorites.value.length > 0) {
+                        console.log("非交易时段，跳过后台刷新");
+                        return;
+                    }
+
+                    // 每次刷新数据时都检查是否跨天
+                    const cleared = autoClearHistory();
+                    if (cleared) {
+                        console.log("检测到跨天，已清理历史数据，跳过本次数据刷新");
+                        return;
+                    }
 
                     favorites.value.forEach(item => {
                         const s = document.createElement('script');
@@ -395,6 +489,9 @@
                 const save = () => localStorage.setItem('my_lite_funds', JSON.stringify(favorites.value));
 
                 onMounted(() => {
+                    // 页面加载时自动检查并清理跨天的历史数据
+                    autoClearHistory();
+                    
                     updateAllFavorites();
                     setInterval(updateAllFavorites, 60000);
                     window.addEventListener('resize', () => myChart && myChart.resize());
@@ -404,7 +501,7 @@
                     searchCode, fund, favorites, isFav, fetchData, toggleFav, isUpdating,
                     calcProfit, getFundCost, getStrategy, batchImport, exportData, setCost, setHoldAmount,
                     removeFav: (code) => { favorites.value = favorites.value.filter(f => f.code !== code); save(); },
-                    debugHistory
+                    debugHistory, forceClearHistory
                 };
             }
         }).mount('#app');
