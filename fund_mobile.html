@@ -98,7 +98,7 @@
                             {{ item.gsz || '--' }}
                         </p>
                         <p :class="item.gszzl >= 0 ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'" 
-                        class="text-[9px] text-white px-1 py-0.5 rounded-sm font-bold mt-1 min-w-[38px] text-center scale-90">
+                        class="text-[9px] text-red px-1 py-0.5 rounded-sm font-bold mt-1 min-w-[38px] text-center scale-90">
                             {{ item.gszzl ? (item.gszzl >= 0 ? '+' : '') + item.gszzl + '%' : '--' }}
                         </p>
                     </div>
