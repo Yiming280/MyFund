@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8">  
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>FundLite</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
@@ -58,6 +58,27 @@
                 </div>
             </div>
         </div>
+<!-- 
+        <div class="mt-4 mb-6">
+            <h3 class="font-bold text-gray-700 mb-3 ml-2 italic text-sm flex justify-between items-center">
+                <span>全球金价</span>
+                <span class="text-[10px] font-normal text-gray-400">实时更新 (元/克 ; 美元/盎司)</span>
+            </h3>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-white rounded-lg shadow-sm border-l-4 border-yellow-500 p-3">
+                    <p class="text-[10px] text-gray-400 font-bold">上海金 (T+D)</p>
+                    <p class="text-xl font-black text-yellow-600 mt-1 tabular-nums">
+                        {{ goldPrices.shanghai || '--' }}<span class="text-[10px] ml-1 font-normal">元</span>
+                    </p>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm border-l-4 border-yellow-400 p-3">
+                    <p class="text-[10px] text-gray-400 font-bold">伦敦现货金</p>
+                    <p class="text-xl font-black text-yellow-600 mt-1 tabular-nums">
+                        {{ goldPrices.london || '--' }}<span class="text-[10px] ml-1 font-normal">$</span>
+                    </p>
+                </div>
+            </div>
+        </div> -->
 
         <div class="mt-8">
             <h3 class="font-bold text-gray-700 mb-3 ml-2 italic text-sm flex justify-between items-center">
@@ -141,6 +162,7 @@
             setup() {
                 const searchCode = ref('');
                 const fund = ref(null);
+                // const goldPrices = ref({ shanghai: '', london: '' });
                 const favorites = ref(JSON.parse(localStorage.getItem('my_lite_funds') || '[]'));
                 const historyData = ref(JSON.parse(localStorage.getItem('fund_history_points') || '{}'));
                 const isUpdating = ref(false);
@@ -278,7 +300,7 @@
                     // 判断是否为周末
                     const isWeekend = (day === 0 || day === 6);
                     // 判断是否在交易时段 (9:25-11:35, 12:55-15:05)
-                    const isTradingHour = (timeStr >= "0925" && timeStr <= "1135") || (timeStr >= "1255" && timeStr <= "1505");
+                    const isTradingHour = (timeStr >= "0910" && timeStr <= "1135") || (timeStr >= "1255" && timeStr <= "1505");
                     
                     return !isWeekend && isTradingHour;
                 };
@@ -330,10 +352,9 @@
                     // 获取当前时间判断
                     const now = new Date();
                     const day = now.getDay();
-                    const isWeekend = (day === 0 || day === 6);
 
                     // 如果是周末或者打点数据为空，显示休市
-                    if (isWeekend || (points.length === 0 && !isTradeTime())) {
+                    if (points.length === 0 && !isTradeTime()) {
                         myChart.setOption({
                             title: { 
                                 text: isWeekend ? '周末休市中' : '等待开盘...', 
@@ -395,7 +416,7 @@
                     const timePart = fullGzTime.split(' ')[1]; // 获取时间 "10:30"
                     const val = parseFloat(fData.gsz);
                     
-                    if (isNaN(val) || val === 0) return;
+                    if (isNaN(val) || val == 0) return;
 
                     // 使用统一的日期格式化函数
                     const today = formatDate(new Date());
@@ -491,9 +512,12 @@
                 onMounted(() => {
                     // 页面加载时自动检查并清理跨天的历史数据
                     autoClearHistory();
-                    
+                    fetchGoldPrices();
                     updateAllFavorites();
-                    setInterval(updateAllFavorites, 60000);
+                    setInterval(() => {
+                        updateAllFavorites();
+                        fetchGoldPrices(); // 新增：每分钟刷新金价
+                    }, 60000);
                     window.addEventListener('resize', () => myChart && myChart.resize());
                 });
 

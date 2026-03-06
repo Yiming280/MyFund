@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>我的金价看板</title>
+    <style>
+        body { font-family: 'Microsoft YaHei', sans-serif; background: #1a1a1a; color: white; text-align: center; }
+        .container { margin-top: 100px; display: flex; justify-content: center; gap: 20px; }
+        .box { background: #333; padding: 20px; border-radius: 15px; width: 200px; border: 1px solid #d4af37; }
+        .price { font-size: 32px; color: #ffd700; margin: 10px 0; }
+        .label { color: #aaa; }
+    </style>
+</head>
+<body>
+    <h1>实时金价监控</h1>
+    <div class="container">
+        <div class="box">
+            <div class="label">上海金 (Au99.99)</div>
+            <div id="sh-price" class="price">--.--</div>
+            <div>元/克</div>
+        </div>
+        <div class="box">
+            <div class="label">国际现货金</div>
+            <div id="int-price" class="price">--.--</div>
+            <div>美元/盎司</div>
+        </div>
+    </div>
+    <p id="status" style="margin-top: 20px; color: #666;">正在连接后端...</p>
+
+    <script>
+        async function updatePrices() {
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/gold');
+                const data = await response.json();
+                
+                document.getElementById('sh-price').innerText = data.shanghai;
+                document.getElementById('int-price').innerText = data.london;
+                document.getElementById('status').innerText = "最后更新：" + new Date().toLocaleTimeString();
+            } catch (err) {
+                document.getElementById('status').innerText = "后端未启动或请求失败";
+            }
+        }
+
+        // 立即执行一次，之后每 60 秒刷新一次
+        updatePrices();
+        setInterval(updatePrices, 60000);
+    </script>
+</body>
+</html>
