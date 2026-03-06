@@ -15,8 +15,6 @@
             <p class="text-xs text-gray-400">实时估值 · 成本还原 · 休市自动重置</p>
             <button @click="batchImport" class="text-[10px] text-blue-500 underline mt-1">批量同步持仓</button>
             <button @click="exportData" class="text-[10px] text-gray-400 underline ml-2">备份数据</button>
-            <button @click="debugHistory" class="text-[10px] text-green-500 underline ml-2">调试历史数据</button>
-            <button @click="forceClearHistory" class="text-[10px] text-red-500 underline ml-2">强制清理历史数据</button>
         </header>
 
         <div class="flex gap-2 mb-6">
@@ -58,27 +56,6 @@
                 </div>
             </div>
         </div>
-<!-- 
-        <div class="mt-4 mb-6">
-            <h3 class="font-bold text-gray-700 mb-3 ml-2 italic text-sm flex justify-between items-center">
-                <span>全球金价</span>
-                <span class="text-[10px] font-normal text-gray-400">实时更新 (元/克 ; 美元/盎司)</span>
-            </h3>
-            <div class="grid grid-cols-2 gap-3">
-                <div class="bg-white rounded-lg shadow-sm border-l-4 border-yellow-500 p-3">
-                    <p class="text-[10px] text-gray-400 font-bold">上海金 (T+D)</p>
-                    <p class="text-xl font-black text-yellow-600 mt-1 tabular-nums">
-                        {{ goldPrices.shanghai || '--' }}<span class="text-[10px] ml-1 font-normal">元</span>
-                    </p>
-                </div>
-                <div class="bg-white rounded-lg shadow-sm border-l-4 border-yellow-400 p-3">
-                    <p class="text-[10px] text-gray-400 font-bold">伦敦现货金</p>
-                    <p class="text-xl font-black text-yellow-600 mt-1 tabular-nums">
-                        {{ goldPrices.london || '--' }}<span class="text-[10px] ml-1 font-normal">$</span>
-                    </p>
-                </div>
-            </div>
-        </div> -->
 
         <div class="mt-8">
             <h3 class="font-bold text-gray-700 mb-3 ml-2 italic text-sm flex justify-between items-center">
@@ -91,11 +68,8 @@
                 class="bg-white rounded-lg shadow-sm mb-1.5 border-l-2 border-blue-500 overflow-hidden cursor-pointer active:bg-gray-50 transition-all">
                 
                 <div class="grid grid-cols-12 px-2.5 py-2 items-center gap-1">
-                    
                     <div class="col-span-7 flex flex-col min-w-0 pr-2">
-                        <p class="font-bold text-gray-800 text-[11px] leading-tight break-words line-clamp-2">
-                            {{ item.name }}
-                        </p>
+                        <p class="font-bold text-gray-800 text-[11px] leading-tight break-words line-clamp-2">{{ item.name }}</p>
                         <p class="text-[9px] text-gray-400 font-mono scale-90 origin-left mt-0.5">{{ item.code }}</p>
                         
                         <div class="flex gap-3 mt-1 opacity-90 scale-95 origin-left">
@@ -119,7 +93,7 @@
                             {{ item.gsz || '--' }}
                         </p>
                         <p :class="item.gszzl >= 0 ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'" 
-                        class="text-[9px] text-red px-1 py-0.5 rounded-sm font-bold mt-1 min-w-[38px] text-center scale-90">
+                        class="text-[9px] px-1 py-0.5 rounded-sm font-bold mt-1 min-w-[38px] text-center scale-90">
                             {{ item.gszzl ? (item.gszzl >= 0 ? '+' : '') + item.gszzl + '%' : '--' }}
                         </p>
                     </div>
@@ -136,7 +110,7 @@
                                     {{ calcProfit(item.gsz, item.code) >= 0 ? '+' : '' }}{{ calcProfit(item.gsz, item.code) }}%
                                 </p>
                             </template>
-                            <p v-else class="text-[9px] text-gray-300 italic">未同步</p>
+                            <p v-else class="text-[9px] text-gray-300 italic">未设置</p>
                         </div>
                         <button @click.stop="removeFav(item.code)" class="text-gray-200 hover:text-red-400 ml-1">
                             <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="4">
@@ -144,7 +118,6 @@
                             </svg>
                         </button>
                     </div>
-
                 </div>
             </div>
             
@@ -153,6 +126,7 @@
                 <p class="text-gray-400 text-xs">暂无自选，搜索后点击“加入自选”</p>
             </div>
         </div>
+    </div>
 
     <script>
         window.jsonpgz = (data) => { window.__currentFundData = data; };
@@ -162,7 +136,6 @@
             setup() {
                 const searchCode = ref('');
                 const fund = ref(null);
-                // const goldPrices = ref({ shanghai: '', london: '' });
                 const favorites = ref(JSON.parse(localStorage.getItem('my_lite_funds') || '[]'));
                 const historyData = ref(JSON.parse(localStorage.getItem('fund_history_points') || '{}'));
                 const isUpdating = ref(false);
@@ -170,42 +143,31 @@
 
                 const isFav = computed(() => fund.value && favorites.value.some(f => f.code === fund.value.fundcode));
 
-                // 1. 设置持仓成本 (手动输入)
                 const setCost = (item) => {
-                    const val = prompt(`[${item.name}]\n请输入持仓成本价 (均价):`, item.cost || "");
-                    if (val !== null) {
-                        item.cost = val;
-                        save();
-                    }
+                    const val = prompt(`[${item.name}]\n请输入持仓成本价:`, item.cost || "");
+                    if (val !== null) { item.cost = val; save(); }
                 };
 
-                // 2. 设置持有金额 (手动输入)
                 const setHoldAmount = (item) => {
-                    const val = prompt(`[${item.name}]\n请输入当前持有总金额 (元):`, item.holdValue || "");
-                    if (val !== null) {
-                        item.holdValue = val;
-                        save();
-                    }
+                    const val = prompt(`[${item.name}]\n请输入当前持有总金额:`, item.holdValue || "");
+                    if (val !== null) { item.holdValue = val; save(); }
                 };
                 
-                // 核心函数 1: 科学建议算法 (阶梯加仓/目标止盈)
                 const getStrategy = (profit) => {
                     const p = parseFloat(profit);
-                    if (p >= 10) return { title: '目标达成：分批止盈', desc: '收益已超10%，建议落袋为安，等待回调', icon: '💰', bg: 'bg-red-50 border-red-100', text: 'text-red-700' };
-                    if (p >= 5) return { title: '势头良好：持续观察', desc: '收益超5%，可设移动止盈，不破位不卖', icon: '📈', bg: 'bg-orange-50 border-orange-100', text: 'text-orange-700' };
-                    if (p <= -10) return { title: '显著低估：建议补仓', desc: '跌幅超过10%，触发价值加仓信号', icon: '💎', bg: 'bg-green-50 border-green-100', text: 'text-green-700' };
-                    if (p <= -5) return { title: '价值区间：定投继续', desc: '轻微浮亏，建议按原计划执行定投', icon: '🛒', bg: 'bg-blue-50 border-blue-100', text: 'text-blue-700' };
-                    return { title: '持有待涨', desc: '当前处于波动平稳期，建议保持仓位不动', icon: '☕', bg: 'bg-gray-50 border-gray-100', text: 'text-gray-600' };
+                    if (p >= 10) return { title: '目标达成：分批止盈', desc: '收益已超10%，建议落袋为安', icon: '💰', bg: 'bg-red-50 border-red-100', text: 'text-red-700' };
+                    if (p >= 5) return { title: '势头良好：持续观察', desc: '收益超5%，可设移动止盈', icon: '📈', bg: 'bg-orange-50 border-orange-100', text: 'text-orange-700' };
+                    if (p <= -10) return { title: '显著低估：建议补仓', desc: '跌幅超过10%，触发加仓信号', icon: '💎', bg: 'bg-green-50 border-green-100', text: 'text-green-700' };
+                    if (p <= -5) return { title: '价值区间：定投继续', desc: '轻微浮亏，按原计划执行', icon: '🛒', bg: 'bg-blue-50 border-blue-100', text: 'text-blue-700' };
+                    return { title: '持有待涨', desc: '波动平稳期，建议保持仓位', icon: '☕', bg: 'bg-gray-50 border-gray-100', text: 'text-gray-600' };
                 };
 
-                // 核心函数 2: 计算盈亏
                 const calcProfit = (currentGsz, code) => {
                     const item = favorites.value.find(f => f.code === code);
                     if (!item || !item.cost || !currentGsz) return 0;
                     return (((parseFloat(currentGsz) - parseFloat(item.cost)) / parseFloat(item.cost)) * 100).toFixed(2);
                 };
 
-                // 核心函数 3: 批量同步
                 const batchImport = () => {
                     const input = prompt("批量输入：代码,成本,总金额（多条换行）\n001592,1.23,5000");
                     if (!input) return;
@@ -231,164 +193,71 @@
                     a.click();
                 };
 
-                // 添加一个调试函数来查看历史数据
-                const debugHistory = () => {
-                    console.log('=== 历史数据调试信息 ===');
-                    console.log('当前历史数据对象:', historyData.value);
-                    console.log('localStorage中的fund_history_points:', localStorage.getItem('fund_history_points'));
-                    
-                    // 显示日期信息
-                    const currentDate = historyData.value["_last_update_date"];
-                    const today = formatDate(new Date());
-                    console.log(`当前存储日期: ${currentDate}`);
-                    console.log(`今天日期: ${today}`);
-                    console.log(`日期是否匹配: ${currentDate === today}`);
-                    
-                    // 显示跨天检测状态
-                    const isCrossDay = currentDate && currentDate !== today;
-                    console.log(`是否跨天: ${isCrossDay ? '是' : '否'}`);
-                    
-                    // 显示各基金的数据点数量
-                    Object.keys(historyData.value).forEach(key => {
-                        if (key !== "_last_update_date") {
-                            const points = historyData.value[key];
-                            console.log(`基金 ${key} 的数据点数量: ${points.length}`);
-                            if (points.length > 0) {
-                                console.log(`  第一个点: ${points[0].time} - ${points[0].val}`);
-                                console.log(`  最后一个点: ${points[points.length - 1].time} - ${points[points.length - 1].val}`);
-                                console.log(`  数据时间跨度: ${points[0].time} 到 ${points[points.length - 1].time}`);
-                            }
-                        }
-                    });
-                    
-                    // 显示清理建议
-                    if (isCrossDay) {
-                        console.log('⚠️  检测到跨天，建议清理历史数据');
-                    } else {
-                        console.log('✅ 日期正常，数据应该可以正确连接');
-                    }
-                    
-                    alert(`历史数据调试信息已输出到控制台，请按F12查看详细信息\n\n当前状态: ${isCrossDay ? '跨天' : '正常'}`);
-                };
-
-                // 强制清理历史数据的函数
-                const forceClearHistory = () => {
-                    if (confirm('确定要清理所有历史数据吗？此操作不可恢复。')) {
-                        console.log('用户手动触发强制清理历史数据');
-                        historyData.value = { "_last_update_date": formatDate(new Date()) };
-                        localStorage.setItem('fund_history_points', JSON.stringify(historyData.value));
-                        console.log('历史数据已强制清理');
-                        alert('历史数据已清理，图表将重新开始记录');
-                        
-                        // 重新渲染图表
-                        if (fund.value) {
-                            nextTick(updateChart);
-                        }
-                    }
+                const formatDate = (date) => {
+                    const d = (typeof date === 'string') ? new Date(date.replace(/-/g, "/")) : date;
+                    return d.toISOString().split('T')[0];
                 };
 
                 const getFundCost = (code) => favorites.value.find(f => f.code === code)?.cost;
-
-                // 判断weekend和交易时段的核心函数
+                
                 const isTradeTime = () => {
                     const now = new Date();
-                    const day = now.getDay(); // 0是周日，6是周六
-                    const hour = now.getHours();
-                    const min = now.getMinutes();
-                    const timeStr = `${hour.toString().padStart(2,'0')}${min.toString().padStart(2,'0')}`;
-
-                    // 判断是否为周末
-                    const isWeekend = (day === 0 || day === 6);
-                    // 判断是否在交易时段 (9:25-11:35, 12:55-15:05)
-                    const isTradingHour = (timeStr >= "0910" && timeStr <= "1135") || (timeStr >= "1255" && timeStr <= "1505");
-                    
-                    return !isWeekend && isTradingHour;
+                    const day = now.getDay();
+                    const timeStr = now.getHours().toString().padStart(2,'0') + now.getMinutes().toString().padStart(2,'0');
+                    return (day >= 1 && day <= 5) && ((timeStr >= "0915" && timeStr <= "1135") || (timeStr >= "1255" && timeStr <= "1505"));
                 };
 
-                // 新增：判断今天是否为工作日（用于图表重置逻辑）
-                const isWorkDay = () => {
-                    const day = new Date().getDay();
-                    return day !== 0 && day !== 6;
-                };
-
-                // 统一的日期格式化函数
-                const formatDate = (date) => {
-                    if (!date) return '';
-                    if (typeof date === 'string') {
-                        // 如果是字符串，尝试解析并格式化
-                        const d = new Date(date);
-                        if (isNaN(d.getTime())) return '';
-                        return d.toISOString().split('T')[0];
-                    }
-                    // 如果是Date对象
-                    return date.toISOString().split('T')[0];
-                };
-
-                // 新增：自动清理历史数据的函数（在非交易时段调用）
                 const autoClearHistory = () => {
                     const today = formatDate(new Date());
-                    const storedDate = historyData.value["_last_update_date"];
-                    
-                    console.log(`[autoClearHistory] 今天日期: ${today}, 存储日期: ${storedDate}`);
-                    
-                    // 如果存储的日期不是今天，说明跨天了，需要清理
-                    if (storedDate && storedDate !== today) {
-                        console.log(`检测到跨天: ${storedDate} -> ${today}，自动清理历史数据`);
-                        historyData.value = { "_last_update_date": today };
+                    if (historyData.value["_date"] !== today) {
+                        historyData.value = { "_date": today };
                         localStorage.setItem('fund_history_points', JSON.stringify(historyData.value));
-                        console.log('历史数据已自动清理');
-                        return true; // 返回true表示进行了清理
                     }
-                    return false; // 返回false表示没有清理
                 };
 
-                // 3. 修正图表休市显示逻辑
                 const updateChart = () => {
                     const dom = document.getElementById('chart');
                     if (!dom || !fund.value) return;
                     if (!myChart) myChart = echarts.init(dom);
                     const points = historyData.value[fund.value.fundcode] || [];
                     
-                    // 获取当前时间判断
-                    const now = new Date();
-                    const day = now.getDay();
-
-                    // 如果是周末或者打点数据为空，显示休市
-                    if (points.length === 0 && !isTradeTime()) {
+                    if (points.length === 0) {
                         myChart.setOption({
-                            title: { 
-                                text: isWeekend ? '周末休市中' : '等待开盘...', 
-                                left: 'center', top: 'center', 
-                                textStyle: { color: '#ccc', fontSize: 13, fontWeight: 'normal' } 
-                            },
-                            xAxis: { show: false }, 
-                            yAxis: { show: false }, 
-                            grid: { show: false },
-                            series: []
+                            title: { text: isTradeTime() ? '等待开盘数据...' : '非交易时段', left: 'center', top: 'center', textStyle: { color: '#ccc', fontSize: 13, fontWeight: 'normal' } },
+                            xAxis: { show: false }, yAxis: { show: false }, series: []
                         }, true);
                         return;
                     }
 
-                    // 绘图逻辑保持原样，确保网格和轴线显示
                     myChart.setOption({
                         title: { show: false },
-                        grid: { left: '15%', right: '5%', top: '15%', bottom: '15%', show: true },
-                        xAxis: { 
-                            show: true, type: 'category', data: points.map(p => p.time),
-                            axisLabel: { fontSize: 9, color: '#999', interval: Math.floor(points.length / 5) }
-                        },
-                        yAxis: { 
-                            show: true, type: 'value', scale: true, 
-                            splitLine: { show: true, lineStyle: { type: 'dashed', color: '#f3f3f3' } },
-                            axisLabel: { fontSize: 9, color: '#999' }
-                        },
+                        grid: { left: '12%', right: '5%', top: '10%', bottom: '15%' },
+                        xAxis: { type: 'category', data: points.map(p => p.time), axisLabel: { fontSize: 9, color: '#999', interval: Math.floor(points.length / 4) } },
+                        yAxis: { type: 'value', scale: true, splitLine: { lineStyle: { type: 'dashed', color: '#f3f3f3' } }, axisLabel: { fontSize: 9, color: '#999' } },
                         series: [{
-                            data: points.map(p => p.val),
-                            type: 'line', smooth: true, showSymbol: false,
+                            data: points.map(p => p.val), type: 'line', smooth: true, showSymbol: false,
                             lineStyle: { color: '#3b82f6', width: 2 },
                             areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(59,130,246,0.2)'}, {offset: 1, color: 'transparent'}]) }
                         }]
                     }, true);
+                };
+
+                const recordPoint = (fData) => {
+                    const code = fData.fundcode;
+                    if (!fData.gztime) return;
+                    const [datePart, timePart] = fData.gztime.split(' ');
+                    const val = parseFloat(fData.gsz);
+                    if (isNaN(val) || val === 0) return;
+
+                    autoClearHistory();
+                    if (!historyData.value[code]) historyData.value[code] = [];
+                    const points = historyData.value[code];
+                    
+                    if (points.length === 0 || points[points.length - 1].time !== timePart) {
+                        points.push({ time: timePart, val: val });
+                        if (points.length > 240) points.shift();
+                        localStorage.setItem('fund_history_points', JSON.stringify(historyData.value));
+                    }
                 };
 
                 const fetchData = async () => {
@@ -398,72 +267,26 @@
                     script.src = `https://fundgz.1234567.com.cn/js/${searchCode.value}.js?rt=${Date.now()}`;
                     document.body.appendChild(script);
                     script.onload = () => {
-                        if(window.__currentFundData) {
-                            fund.value = window.__currentFundData;
-                            recordPoint(fund.value);
+                        const d = window.__currentFundData;
+                        if(d) {
+                            fund.value = d;
+                            // 同步更新自选列表中的数据
+                            const idx = favorites.value.findIndex(f => f.code === d.fundcode);
+                            if (idx > -1) {
+                                favorites.value[idx] = { ...favorites.value[idx], gsz: d.gsz, gszzl: d.gszzl, dwjz: d.dwjz, jzrq: d.jzrq };
+                                save();
+                            }
+                            recordPoint(d);
                             nextTick(updateChart);
                         }
                         script.remove();
                         isUpdating.value = false;
                     };
-                    script.onerror = () => { isUpdating.value = false; alert("查询失败"); };
-                };
-
-                const recordPoint = (fData) => {
-                    const code = fData.fundcode;
-                    const fullGzTime = fData.gztime; // 格式如 "2026-03-02 10:30"
-                    const datePart = fullGzTime.split(' ')[0]; // 获取日期 "2026-03-02"
-                    const timePart = fullGzTime.split(' ')[1]; // 获取时间 "10:30"
-                    const val = parseFloat(fData.gsz);
-                    
-                    if (isNaN(val) || val == 0) return;
-
-                    // 使用统一的日期格式化函数
-                    const today = formatDate(new Date());
-                    const fundDate = formatDate(datePart);
-                    
-                    console.log(`[recordPoint] 基金日期: ${fundDate}, 今天日期: ${today}, 存储日期: ${historyData.value["_last_update_date"]}`);
-
-                    // 检查是否跨天。如果基金日期与今天日期不匹配，说明跨天了，需要清理
-                    if (fundDate !== today) {
-                        console.log(`检测到跨天: 基金数据日期 ${fundDate} 与今天 ${today} 不匹配，清理历史数据`);
-                        historyData.value = { "_last_update_date": today };
-                        console.log('历史数据已完全重置');
-                    } else {
-                        // 同一天的数据，检查存储的日期标记
-                        if (!historyData.value["_last_update_date"] || historyData.value["_last_update_date"] !== today) {
-                            console.log(`检测到首次记录今天的数据: ${today}`);
-                            historyData.value["_last_update_date"] = today;
-                        }
-                    }
-
-                    if (!historyData.value[code]) historyData.value[code] = [];
-                    const points = historyData.value[code];
-                    
-                    // 只有在时间点不同时才记录，防止重复打点
-                    if (points.length === 0 || points[points.length - 1].time !== timePart) {
-                        points.push({ time: timePart, val: val });
-                        console.log(`记录点位: ${code} - ${timePart} - ${val}`);
-                        // 保留最近4小时的数据(1分钟一个点共240个)
-                        if (points.length > 240) points.shift();
-                        localStorage.setItem('fund_history_points', JSON.stringify(historyData.value));
-                        console.log(`已保存到localStorage，当前${code}有${points.length}个点`);
-                    }
+                    script.onerror = () => { isUpdating.value = false; };
                 };
 
                 const updateAllFavorites = () => {
-                    if (!isTradeTime() && favorites.value.length > 0) {
-                        console.log("非交易时段，跳过后台刷新");
-                        return;
-                    }
-
-                    // 每次刷新数据时都检查是否跨天
-                    const cleared = autoClearHistory();
-                    if (cleared) {
-                        console.log("检测到跨天，已清理历史数据，跳过本次数据刷新");
-                        return;
-                    }
-
+                    if (!isTradeTime() && favorites.value.length > 0 && fund.value) return;
                     favorites.value.forEach(item => {
                         const s = document.createElement('script');
                         s.src = `https://fundgz.1234567.com.cn/js/${item.code}.js?rt=${Date.now()}`;
@@ -471,15 +294,13 @@
                         s.onload = () => {
                             const d = window.__currentFundData;
                             if(d && d.fundcode === item.code) {
-                                // 【核心修改】：精准更新行情字段，保留持仓字段
-                                item.gsz = d.gsz; 
-                                item.gszzl = d.gszzl; 
-                                item.dwjz = d.dwjz; 
-                                item.jzrq = d.jzrq;
-                                recordPoint(d); // 记录历史点位
-                                
-                                // 每次刷新行情后自动保存一次，确保最新估值也被缓存
-                                save(); 
+                                item.gsz = d.gsz; item.gszzl = d.gszzl; item.dwjz = d.dwjz; item.jzrq = d.jzrq;
+                                if (fund.value && fund.value.fundcode === d.fundcode) {
+                                    fund.value = d;
+                                    nextTick(updateChart);
+                                }
+                                recordPoint(d);
+                                save();
                             }
                             s.remove();
                         };
@@ -489,43 +310,24 @@
                 const toggleFav = () => {
                     if (!fund.value) return;
                     const idx = favorites.value.findIndex(f => f.code === fund.value.fundcode);
-                    if (idx > -1) {
-                        favorites.value.splice(idx, 1);
-                    } else {
-                        // 固化当前抓取到的行情，同时初始化持仓字段
-                        favorites.value.push({ 
-                            name: fund.value.name, 
-                            code: fund.value.fundcode, 
-                            dwjz: fund.value.dwjz,
-                            gsz: fund.value.gsz,     
-                            gszzl: fund.value.gszzl, 
-                            jzrq: fund.value.jzrq,
-                            holdValue: '', // 初始化为空，等待后续手动输入
-                            cost: ''       // 初始化为空
-                        });
-                    }
+                    if (idx > -1) { favorites.value.splice(idx, 1); } 
+                    else { favorites.value.push({ ...fund.value, code: fund.value.fundcode, holdValue: '', cost: '' }); }
                     save();
                 };
 
                 const save = () => localStorage.setItem('my_lite_funds', JSON.stringify(favorites.value));
 
                 onMounted(() => {
-                    // 页面加载时自动检查并清理跨天的历史数据
                     autoClearHistory();
-                    fetchGoldPrices();
                     updateAllFavorites();
-                    setInterval(() => {
-                        updateAllFavorites();
-                        fetchGoldPrices(); // 新增：每分钟刷新金价
-                    }, 60000);
+                    setInterval(updateAllFavorites, 60000);
                     window.addEventListener('resize', () => myChart && myChart.resize());
                 });
 
                 return { 
                     searchCode, fund, favorites, isFav, fetchData, toggleFav, isUpdating,
                     calcProfit, getFundCost, getStrategy, batchImport, exportData, setCost, setHoldAmount,
-                    removeFav: (code) => { favorites.value = favorites.value.filter(f => f.code !== code); save(); },
-                    debugHistory, forceClearHistory
+                    removeFav: (code) => { favorites.value = favorites.value.filter(f => f.code !== code); save(); }
                 };
             }
         }).mount('#app');
